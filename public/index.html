@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Minecraft Control Center</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">M</span>
+          <div>
+            <strong>Control Center</strong>
+            <small>Minecraft local</small>
+          </div>
+        </div>
+        <nav>
+          <button class="nav-item active" data-view="dashboard">Panel</button>
+          <button class="nav-item" data-view="console">Consola</button>
+          <button class="nav-item" data-view="files">Archivos</button>
+          <button class="nav-item" data-view="settings">Configuracion</button>
+        </nav>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <h1 id="serverName">Servidor</h1>
+            <p id="serverPath">Cargando...</p>
+          </div>
+          <div class="status-pill" id="statusPill">Desconectado</div>
+        </header>
+
+        <section class="view active" id="dashboard">
+          <div class="metrics">
+            <article class="metric">
+              <span>Estado</span>
+              <strong id="metricStatus">--</strong>
+            </article>
+            <article class="metric">
+              <span>Puerto</span>
+              <strong id="metricPort">--</strong>
+            </article>
+            <article class="metric">
+              <span>RAM objetivo</span>
+              <strong id="metricRam">--</strong>
+            </article>
+            <article class="metric">
+              <span>PID</span>
+              <strong id="metricPid">--</strong>
+            </article>
+          </div>
+
+          <div class="actions">
+            <button class="primary" id="startBtn">Iniciar</button>
+            <button id="restartBtn">Reiniciar</button>
+            <button class="danger" id="stopBtn">Detener</button>
+            <button id="backupBtn">Backup</button>
+          </div>
+
+          <section class="panel">
+            <div class="panel-title">
+              <h2>Actividad reciente</h2>
+              <span id="logCount">0 lineas</span>
+            </div>
+            <div class="mini-log" id="miniLog"></div>
+          </section>
+        </section>
+
+        <section class="view" id="console">
+          <section class="panel console-panel">
+            <div class="panel-title">
+              <h2>Consola en vivo</h2>
+              <button id="clearConsoleBtn">Limpiar vista</button>
+            </div>
+            <div class="console" id="consoleLog"></div>
+            <form class="command-row" id="commandForm">
+              <div class="command-box">
+                <input id="commandInput" autocomplete="off" placeholder="Escribe un comando: say Hola, list, whitelist..." />
+                <div class="suggestions" id="suggestions"></div>
+              </div>
+              <button class="primary" type="submit">Enviar</button>
+            </form>
+          </section>
+        </section>
+
+        <section class="view" id="files">
+          <section class="panel">
+            <div class="panel-title">
+              <h2>Archivos del servidor</h2>
+              <button id="refreshFilesBtn">Actualizar</button>
+            </div>
+            <div class="file-list" id="fileList"></div>
+          </section>
+        </section>
+
+        <section class="view" id="settings">
+          <section class="panel settings-grid">
+            <label>
+              Nombre
+              <input id="settingName" readonly />
+            </label>
+            <label>
+              Carpeta
+              <input id="settingPath" readonly />
+            </label>
+            <label>
+              Comando
+              <input id="settingCommand" readonly />
+            </label>
+            <label>
+              Notas
+              <textarea id="settingNotes" readonly></textarea>
+            </label>
+          </section>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

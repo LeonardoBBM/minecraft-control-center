@@ -1,0 +1,15 @@
+{
+  "servers": [
+    {
+      "id": "prominence-ii",
+      "name": "Prominence II - Hasturian Era",
+      "path": "/home/leonardo/Escritorio/Prominence_II_Hasturian_Era_Server_Pack_v3.9.27",
+      "command": "bash start.sh",
+      "port": 25565,
+      "java": "system",
+      "minRam": "4G",
+      "maxRam": "8G",
+      "notes": "Servidor Fabric/Prominence II importado como registro inicial. No arranca solo."
+    }
+  ]
+}

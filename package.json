@@ -1,0 +1,24 @@
+{
+  "name": "minecraft-control-center",
+  "version": "0.1.0",
+  "description": "Local Minecraft server control panel with live console and command autocomplete.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "keywords": [
+    "minecraft",
+    "server",
+    "control-panel"
+  ],
+  "author": "LeonardoBBM",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
