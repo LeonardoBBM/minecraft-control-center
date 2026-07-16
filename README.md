@@ -2,6 +2,11 @@
 
 Panel local para controlar servidores de Minecraft con consola en vivo y autocompletado de comandos.
 
+## Requisitos
+
+- Node.js 20 o superior.
+- `screen` instalado en Linux para supervisar las instancias de Minecraft.
+
 ## Funciones actuales
 
 - Dashboard con estado, puerto, RAM objetivo y PID.
@@ -48,6 +53,15 @@ bash start.sh
 ```
 
 Desde el boton **Nueva instancia** puedes registrar otro modpack ya descargado. El panel pide nombre, carpeta, comando, puerto, RAM opcional y notas. La carpeta debe existir; el panel no copia ni borra archivos del modpack.
+
+## Control de procesos
+
+El panel arranca cada servidor dentro de una sesion `screen` llamada `mc-<id-del-servidor>`. Esto permite que Minecraft siga supervisado aunque el proceso Node del panel se reinicie.
+
+- Iniciar usa `screen -dmS`.
+- Enviar comandos usa `screen -S <sesion> -X stuff`.
+- Detener manda `stop` y, si la sesion no cierra, hace `screen -X quit` despues de un tiempo de gracia.
+- La consola del panel lee `logs/latest.log` del servidor, no stdout directo de Node.
 
 ## Seguridad
 

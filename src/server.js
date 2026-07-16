@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { cp, readdir, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { freemem, totalmem } from "node:os";
 import { WebSocketServer } from "ws";
 import { COMMANDS, completeCommand } from "./minecraftCommands.js";
@@ -39,9 +39,11 @@ const PROPERTY_KEYS = new Set(PROPERTY_FIELDS.map((field) => field.key));
 mkdirSync(DATA_DIR, { recursive: true });
 mkdirSync(BACKUP_DIR, { recursive: true });
 
-const processes = new Map();
+const logWatchers = new Map();
 const logBuffers = new Map();
 const clients = new Set();
+const manualStops = new Set();
+const screenStates = new Map();
 const playerState = new Map();
 
 function loadConfig() {
@@ -128,17 +130,62 @@ function createServerRecord(config, body) {
   };
 }
 
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function screenSessionName(server) {
+  return `mc-${server.id}`;
+}
+
+function listScreenSessions() {
+  const result = spawnSync("screen", ["-ls"], { encoding: "utf8" });
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  const sessions = new Map();
+
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(/^\s*(\d+)\.([^\s]+)\s+\(/);
+    if (match) {
+      sessions.set(match[2], { pid: Number(match[1]), name: match[2] });
+    }
+  }
+
+  return sessions;
+}
+
+function screenInfo(server) {
+  return listScreenSessions().get(screenSessionName(server)) || null;
+}
+
+function isScreenRunning(server) {
+  return Boolean(screenInfo(server));
+}
+
+function runScreen(args) {
+  const result = spawnSync("screen", args, { encoding: "utf8" });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "screen command failed").trim());
+  }
+  return result;
+}
+
 function findServer(id) {
   return loadConfig().servers.find((server) => server.id === id);
 }
 
 function publicServer(server) {
-  const running = processes.has(server.id);
+  const info = screenInfo(server);
+  const running = Boolean(info);
   const logs = logBuffers.get(server.id) || [];
   return {
     ...server,
     running,
-    pid: running ? processes.get(server.id).pid : null,
+    pid: running ? info.pid : null,
+    supervisor: "screen",
+    session: screenSessionName(server),
     recentLogs: logs.slice(-80),
     players: publicPlayers(server)
   };
@@ -172,6 +219,116 @@ function appendLog(serverId, line, stream = "system") {
   logBuffers.set(serverId, buffer);
   updatePlayersFromLog(serverId, item.line);
   broadcast("log", { serverId, ...item });
+}
+
+function latestLogFile(server) {
+  return join(resolve(server.path), "logs", "latest.log");
+}
+
+function readRecentLogLines(server, count = 200) {
+  const file = latestLogFile(server);
+  if (!existsSync(file)) {
+    return [];
+  }
+
+  return readFileSync(file, "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .slice(-count);
+}
+
+function seedLogBuffer(server) {
+  if (logBuffers.has(server.id)) {
+    return;
+  }
+
+  const now = new Date().toISOString();
+  const lines = readRecentLogLines(server).map((line) => ({ stream: "stdout", line, at: now }));
+  logBuffers.set(server.id, lines);
+  for (const entry of lines) {
+    updatePlayersFromLog(server.id, entry.line);
+  }
+}
+
+function readLogPosition(server) {
+  const file = latestLogFile(server);
+  if (!existsSync(file)) {
+    return 0;
+  }
+  return statSync(file).size;
+}
+
+function pollLatestLog(server) {
+  const watcher = logWatchers.get(server.id);
+  if (!watcher) {
+    return;
+  }
+
+  const file = latestLogFile(server);
+  if (!existsSync(file)) {
+    watcher.position = 0;
+    return;
+  }
+
+  const buffer = readFileSync(file);
+  if (buffer.length < watcher.position) {
+    watcher.position = 0;
+  }
+  if (buffer.length === watcher.position) {
+    return;
+  }
+
+  const chunk = buffer.subarray(watcher.position).toString("utf8");
+  watcher.position = buffer.length;
+  for (const line of chunk.split(/\r?\n/).filter(Boolean)) {
+    appendLog(server.id, line, "stdout");
+  }
+}
+
+function startLogWatcher(server, options = {}) {
+  seedLogBuffer(server);
+  if (logWatchers.has(server.id)) {
+    return;
+  }
+
+  const watcher = {
+    position: options.fromStart ? 0 : readLogPosition(server),
+    timer: null
+  };
+  watcher.timer = setInterval(() => pollLatestLog(server), 1500);
+  watcher.timer.unref();
+  logWatchers.set(server.id, watcher);
+}
+
+function startAllLogWatchers() {
+  for (const server of loadConfig().servers) {
+    startLogWatcher(server);
+  }
+}
+
+function reconcileScreenStates() {
+  for (const server of loadConfig().servers) {
+    const info = screenInfo(server);
+    const running = Boolean(info);
+    const previous = screenStates.get(server.id);
+    if (!previous || previous.running !== running || previous.pid !== (info?.pid || null)) {
+      screenStates.set(server.id, { running, pid: info?.pid || null });
+      if (!running && previous?.running) {
+        playerState.set(server.id, new Map());
+        if (!manualStops.has(server.id)) {
+          appendLog(server.id, "screen session ended.", "system");
+        }
+        broadcastPlayers(server.id);
+      }
+      broadcast("server-state", { serverId: server.id, running, pid: info?.pid || null });
+    }
+  }
+}
+
+function startScreenMonitor() {
+  reconcileScreenStates();
+  const timer = setInterval(reconcileScreenStates, 3000);
+  timer.unref();
 }
 
 function cleanPlayerName(name) {
@@ -299,84 +456,60 @@ function parseCommandLine(commandLine) {
 }
 
 function startServer(server) {
-  if (processes.has(server.id)) {
-    return { ok: true, alreadyRunning: true };
+  const existing = screenInfo(server);
+  if (existing) {
+    startLogWatcher(server);
+    return { ok: true, alreadyRunning: true, pid: existing.pid, session: screenSessionName(server) };
   }
 
   if (!existsSync(server.path)) {
     throw new Error(`La carpeta no existe: ${server.path}`);
   }
 
-  const [command, ...args] = parseCommandLine(server.command);
+  const [command] = parseCommandLine(server.command);
   if (!command) {
     throw new Error("El comando de arranque esta vacio.");
   }
 
-  appendLog(server.id, `Starting: ${server.command}`, "system");
-  const child = spawn(command, args, {
-    cwd: server.path,
-    env: process.env,
-    stdio: ["pipe", "pipe", "pipe"]
-  });
-
-  processes.set(server.id, child);
+  const session = screenSessionName(server);
+  const launchCommand = `cd ${shellQuote(resolve(server.path))} && exec ${server.command}`;
+  appendLog(server.id, `Starting screen session ${session}: ${server.command}`, "system");
   playerState.set(server.id, new Map());
-  broadcast("server-state", { serverId: server.id, running: true, pid: child.pid });
+  startLogWatcher(server);
+
+  runScreen(["-dmS", session, "bash", "-lc", launchCommand]);
+
+  const info = screenInfo(server);
+  broadcast("server-state", { serverId: server.id, running: true, pid: info?.pid || null });
   broadcastPlayers(server.id);
-
-  child.stdout.on("data", (chunk) => {
-    for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) {
-      appendLog(server.id, line, "stdout");
-    }
-  });
-
-  child.stderr.on("data", (chunk) => {
-    for (const line of chunk.toString().split(/\r?\n/).filter(Boolean)) {
-      appendLog(server.id, line, "stderr");
-    }
-  });
-
-  child.on("exit", (code, signal) => {
-    processes.delete(server.id);
-    playerState.set(server.id, new Map());
-    appendLog(server.id, `Process exited with code ${code ?? "null"} signal ${signal ?? "none"}`, "system");
-    broadcast("server-state", { serverId: server.id, running: false, pid: null });
-    broadcastPlayers(server.id);
-  });
-
-  child.on("error", (error) => {
-    processes.delete(server.id);
-    playerState.set(server.id, new Map());
-    appendLog(server.id, error.message, "error");
-    broadcast("server-state", { serverId: server.id, running: false, pid: null });
-    broadcastPlayers(server.id);
-  });
-
-  return { ok: true, pid: child.pid };
+  return { ok: true, pid: info?.pid || null, session };
 }
 
 function sendCommand(server, command) {
-  const child = processes.get(server.id);
-  if (!child || !child.stdin.writable) {
-    throw new Error("El servidor no esta corriendo desde este panel.");
+  if (!isScreenRunning(server)) {
+    throw new Error("El servidor no esta corriendo en screen.");
   }
-  child.stdin.write(`${command}\n`);
+  runScreen(["-S", screenSessionName(server), "-X", "stuff", `${command}\n`]);
   appendLog(server.id, `> ${command}`, "command");
   return { ok: true };
 }
 
 function stopServer(server) {
-  const child = processes.get(server.id);
-  if (!child) {
+  if (!isScreenRunning(server)) {
     return { ok: true, alreadyStopped: true };
   }
-  child.stdin.write("stop\n");
+
+  manualStops.add(server.id);
+  runScreen(["-S", screenSessionName(server), "-X", "stuff", "stop\n"]);
   appendLog(server.id, "> stop", "command");
   setTimeout(() => {
-    if (processes.get(server.id) === child) {
-      child.kill("SIGTERM");
-      appendLog(server.id, "SIGTERM sent after graceful stop timeout.", "system");
+    if (isScreenRunning(server)) {
+      runScreen(["-S", screenSessionName(server), "-X", "quit"]);
+      appendLog(server.id, "screen session closed after graceful stop timeout.", "system");
     }
+    manualStops.delete(server.id);
+    broadcast("server-state", { serverId: server.id, running: false, pid: null });
+    broadcastPlayers(server.id);
   }, 20000).unref();
   return { ok: true };
 }
@@ -662,6 +795,8 @@ async function handleApi(request, response) {
     const server = createServerRecord(config, body);
     config.servers.push(server);
     saveConfig(config);
+    startLogWatcher(server);
+    reconcileScreenStates();
     sendJson(response, 201, publicServer(server));
     return;
   }
@@ -683,8 +818,12 @@ async function handleApi(request, response) {
       return;
     }
     if (request.method === "POST" && action === "restart") {
-      stopServer(server);
-      setTimeout(() => startServer(server), 3500).unref();
+      if (isScreenRunning(server)) {
+        stopServer(server);
+        setTimeout(() => startServer(server), 22000).unref();
+      } else {
+        startServer(server);
+      }
       sendJson(response, 200, { ok: true });
       return;
     }
@@ -750,6 +889,9 @@ wss.on("connection", (socket) => {
   socket.send(JSON.stringify({ type: "hello", payload: { servers: loadConfig().servers.map(publicServer) } }));
   socket.on("close", () => clients.delete(socket));
 });
+
+startAllLogWatchers();
+startScreenMonitor();
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Minecraft Control Center running at http://127.0.0.1:${PORT}`);
