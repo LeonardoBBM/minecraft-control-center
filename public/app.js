@@ -7,6 +7,8 @@ const state = {
   ram: null,
   players: [],
   memory: null,
+  filePath: "",
+  currentFile: null,
   suggestionIndex: -1
 };
 
@@ -34,6 +36,14 @@ const elements = {
   commandInput: $("#commandInput"),
   suggestions: $("#suggestions"),
   fileList: $("#fileList"),
+  filePathLabel: $("#filePathLabel"),
+  upFilesBtn: $("#upFilesBtn"),
+  fileEditorPanel: $("#fileEditorPanel"),
+  fileEditorTitle: $("#fileEditorTitle"),
+  fileEditorStatus: $("#fileEditorStatus"),
+  fileEditorContent: $("#fileEditorContent"),
+  downloadFileBtn: $("#downloadFileBtn"),
+  saveFileBtn: $("#saveFileBtn"),
   playerList: $("#playerList"),
   playerCount: $("#playerCount"),
   propertiesForm: $("#propertiesForm"),
@@ -76,6 +86,8 @@ function clearServerScopedState() {
   state.properties = null;
   state.ram = null;
   state.players = [];
+  state.filePath = "";
+  state.currentFile = null;
 }
 
 function renderServerSelect() {
@@ -310,16 +322,58 @@ async function runPlayerAction(action, player = "") {
   renderPlayers();
 }
 
-async function loadFiles() {
+function parentPath(path) {
+  const parts = String(path || "").split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+async function loadFiles(path = state.filePath) {
   const server = selectedServer();
   elements.fileList.innerHTML = `<div class="file-item"><span>Cargando...</span><span></span></div>`;
-  const payload = await api(`/api/servers/${server.id}/files`);
+  const payload = await api(`/api/servers/${server.id}/files?path=${encodeURIComponent(path || "")}`);
+  state.filePath = payload.path || "";
+  state.currentFile = null;
+  elements.filePathLabel.textContent = state.filePath ? `/${state.filePath}` : "/";
+  elements.upFilesBtn.disabled = !state.filePath;
+  elements.fileEditorPanel.hidden = true;
   elements.fileList.innerHTML = payload.entries.map((entry) => `
-    <div class="file-item">
+    <button class="file-item" data-file-path="${escapeHtml(entry.path)}" data-directory="${entry.directory}">
       <span>${entry.directory ? "[DIR]" : "[FILE]"} ${escapeHtml(entry.name)}</span>
       <span>${entry.directory ? "" : `${Math.round(entry.size / 1024)} KB`}</span>
-    </div>
+    </button>
   `).join("");
+}
+
+async function openFile(path) {
+  const server = selectedServer();
+  const payload = await api(`/api/servers/${server.id}/file?path=${encodeURIComponent(path)}`);
+  state.currentFile = payload.path;
+  elements.fileEditorPanel.hidden = false;
+  elements.fileEditorTitle.textContent = payload.path;
+  elements.fileEditorStatus.textContent = `${Math.round(payload.size / 1024)} KB`;
+  elements.fileEditorContent.value = payload.content;
+}
+
+async function saveCurrentFile() {
+  const server = selectedServer();
+  if (!state.currentFile) {
+    return;
+  }
+  elements.fileEditorStatus.textContent = "Guardando...";
+  const payload = await api(`/api/servers/${server.id}/file?path=${encodeURIComponent(state.currentFile)}`, {
+    method: "PUT",
+    body: { content: elements.fileEditorContent.value }
+  });
+  elements.fileEditorStatus.textContent = `Guardado (${Math.round(payload.size / 1024)} KB)`;
+}
+
+function downloadCurrentFile() {
+  const server = selectedServer();
+  if (!state.currentFile) {
+    return;
+  }
+  window.open(`/api/servers/${server.id}/download?path=${encodeURIComponent(state.currentFile)}`, "_blank");
 }
 
 function renderProperties() {
@@ -614,6 +668,23 @@ elements.newInstanceForm.addEventListener("submit", (event) => {
 });
 $("#refreshPlayersBtn").addEventListener("click", () => runPlayerAction("refresh").catch(alert));
 $("#refreshFilesBtn").addEventListener("click", () => loadFiles().catch(alert));
+elements.upFilesBtn.addEventListener("click", () => loadFiles(parentPath(state.filePath)).catch(alert));
+elements.fileList.addEventListener("click", (event) => {
+  const item = event.target.closest("[data-file-path]");
+  if (!item) {
+    return;
+  }
+  const path = item.dataset.filePath;
+  if (item.dataset.directory === "true") {
+    loadFiles(path).catch(alert);
+  } else {
+    openFile(path).catch(alert);
+  }
+});
+elements.saveFileBtn.addEventListener("click", () => saveCurrentFile().catch((error) => {
+  elements.fileEditorStatus.textContent = error.message;
+}));
+elements.downloadFileBtn.addEventListener("click", downloadCurrentFile);
 $("#reloadPropertiesBtn").addEventListener("click", () => loadProperties().catch(alert));
 $("#reloadRamBtn").addEventListener("click", () => loadRam().catch(alert));
 $("#reloadLogsBtn").addEventListener("click", () => loadPersistentLogs().catch(alert));

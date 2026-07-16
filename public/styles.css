@@ -354,10 +354,23 @@ select {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 12px;
+  width: 100%;
+  text-align: left;
   border: 1px solid #252d39;
   border-radius: 8px;
   padding: 10px 12px;
   background: #111820;
+}
+
+.file-editor-panel {
+  margin-top: 14px;
+}
+
+.file-editor {
+  min-height: min(52vh, 560px);
+  font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, monospace;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .player-list {

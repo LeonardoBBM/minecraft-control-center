@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { cp, readdir, stat } from "node:fs/promises";
-import { extname, join, normalize, resolve } from "node:path";
+import { basename, extname, join, normalize, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { freemem, totalmem } from "node:os";
 import { WebSocketServer } from "ws";
@@ -1040,16 +1040,92 @@ function serveStatic(request, response) {
   createReadStream(filePath).pipe(response);
 }
 
-async function getDirectorySummary(path) {
-  const resolved = resolve(path);
-  const entries = await readdir(resolved);
+function resolveServerFile(server, requestedPath = "") {
+  const root = resolve(server.path);
+  const target = resolve(root, String(requestedPath || "."));
+  if (target !== root && !target.startsWith(`${root}${sep}`)) {
+    throw new Error("Ruta fuera de la carpeta del servidor.");
+  }
+  return { root, target, relativePath: relative(root, target) };
+}
+
+async function getDirectorySummary(server, requestedPath = "") {
+  const { root, target, relativePath } = resolveServerFile(server, requestedPath);
+  const targetStat = statSync(target);
+  if (!targetStat.isDirectory()) {
+    throw new Error("La ruta no es una carpeta.");
+  }
+
+  const entries = await readdir(target);
   const summary = [];
   for (const entry of entries.slice(0, 200)) {
-    const fullPath = join(resolved, entry);
+    const fullPath = join(target, entry);
     const itemStat = await stat(fullPath);
-    summary.push({ name: entry, directory: itemStat.isDirectory(), size: itemStat.size });
+    summary.push({
+      name: entry,
+      path: relative(root, fullPath),
+      directory: itemStat.isDirectory(),
+      size: itemStat.size
+    });
   }
-  return summary;
+  summary.sort((left, right) => Number(right.directory) - Number(left.directory) || left.name.localeCompare(right.name));
+  return { path: relativePath, entries: summary };
+}
+
+function assertTextFile(buffer) {
+  if (buffer.includes(0)) {
+    throw new Error("El archivo parece binario.");
+  }
+}
+
+function readTextFile(server, requestedPath = "") {
+  const { target, relativePath } = resolveServerFile(server, requestedPath);
+  const fileStat = statSync(target);
+  if (!fileStat.isFile()) {
+    throw new Error("La ruta no es un archivo.");
+  }
+  if (fileStat.size > 1024 * 1024) {
+    throw new Error("Solo se pueden abrir archivos de texto menores a 1MB.");
+  }
+
+  const buffer = readFileSync(target);
+  assertTextFile(buffer);
+  return {
+    path: relativePath,
+    name: basename(target),
+    size: fileStat.size,
+    content: buffer.toString("utf8")
+  };
+}
+
+function writeTextFile(server, requestedPath = "", content = "") {
+  const { target } = resolveServerFile(server, requestedPath);
+  const fileStat = statSync(target);
+  if (!fileStat.isFile()) {
+    throw new Error("La ruta no es un archivo.");
+  }
+  if (Buffer.byteLength(String(content), "utf8") > 1024 * 1024) {
+    throw new Error("Solo se pueden guardar archivos menores a 1MB.");
+  }
+
+  writeFileSync(target, String(content));
+  appendLog(server.id, `File updated: ${requestedPath}`, "system");
+  return readTextFile(server, requestedPath);
+}
+
+function sendDownload(server, requestedPath, response) {
+  const { target } = resolveServerFile(server, requestedPath);
+  const fileStat = statSync(target);
+  if (!fileStat.isFile()) {
+    throw new Error("La ruta no es un archivo.");
+  }
+
+  response.writeHead(200, {
+    "content-type": "application/octet-stream",
+    "content-length": fileStat.size,
+    "content-disposition": `attachment; filename="${basename(target).replaceAll('"', "")}"`
+  });
+  createReadStream(target).pipe(response);
 }
 
 async function handleApi(request, response) {
@@ -1119,7 +1195,20 @@ async function handleApi(request, response) {
       return;
     }
     if (request.method === "GET" && action === "files") {
-      sendJson(response, 200, { path: server.path, entries: await getDirectorySummary(server.path) });
+      sendJson(response, 200, await getDirectorySummary(server, url.searchParams.get("path") || ""));
+      return;
+    }
+    if (request.method === "GET" && action === "file") {
+      sendJson(response, 200, readTextFile(server, url.searchParams.get("path") || ""));
+      return;
+    }
+    if (request.method === "PUT" && action === "file") {
+      const body = await readBody(request);
+      sendJson(response, 200, writeTextFile(server, url.searchParams.get("path") || "", body.content));
+      return;
+    }
+    if (request.method === "GET" && action === "download") {
+      sendDownload(server, url.searchParams.get("path") || "", response);
       return;
     }
     if (request.method === "GET" && action === "logs") {

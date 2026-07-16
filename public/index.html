@@ -120,10 +120,30 @@
         <section class="view" id="files">
           <section class="panel">
             <div class="panel-title">
-              <h2>Archivos del servidor</h2>
-              <button id="refreshFilesBtn">Actualizar</button>
+              <div>
+                <h2>Archivos del servidor</h2>
+                <span id="filePathLabel">/</span>
+              </div>
+              <div class="panel-actions">
+                <button id="upFilesBtn" type="button">Subir</button>
+                <button id="refreshFilesBtn" type="button">Actualizar</button>
+              </div>
             </div>
             <div class="file-list" id="fileList"></div>
+          </section>
+
+          <section class="panel file-editor-panel" id="fileEditorPanel" hidden>
+            <div class="panel-title">
+              <div>
+                <h2 id="fileEditorTitle">Archivo</h2>
+                <span id="fileEditorStatus">Sin cambios</span>
+              </div>
+              <div class="panel-actions">
+                <button id="downloadFileBtn" type="button">Descargar</button>
+                <button class="primary" id="saveFileBtn" type="button">Guardar</button>
+              </div>
+            </div>
+            <textarea class="file-editor" id="fileEditorContent" spellcheck="false"></textarea>
           </section>
         </section>
 

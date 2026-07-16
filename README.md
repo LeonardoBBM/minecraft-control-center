@@ -80,6 +80,10 @@ El auto-restart espera 10 segundos y limita los reintentos a 3 en una ventana de
 
 Cuando una instancia esta corriendo, el panel busca los procesos hijos de la sesion `screen`, detecta el proceso Java si existe y calcula uso real leyendo `/proc`. El dashboard muestra CPU y RAM reales junto al PID de la sesion.
 
+## File manager
+
+La pestaña **Archivos** permite navegar subcarpetas dentro de la carpeta del servidor. Las rutas se resuelven contra `server.path` y se rechaza cualquier intento de salir de esa carpeta. Los archivos de texto menores a 1MB se pueden abrir, editar, guardar y descargar desde el panel.
+
 ## Seguridad
 
 El panel escucha solo en `127.0.0.1`. No esta pensado para exponerse a internet sin autenticacion, HTTPS y un proxy seguro.
