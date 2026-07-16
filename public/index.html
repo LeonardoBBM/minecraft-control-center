@@ -328,6 +328,19 @@
           </button>
         </div>
 
+        <section class="import-panel">
+          <div>
+            <span class="panel-kicker">Importación automática</span>
+            <h3>Server pack o ZIP local</h3>
+            <p>Pega una carpeta ejecutable o un archivo .zip de server pack. El panel lo prepara y registra la instancia.</p>
+          </div>
+          <label class="wide">Ruta del pack<input id="importSourcePath" type="text" placeholder="/home/usuario/Descargas/server-pack.zip"></label>
+          <button class="button" id="importInstanceBtn" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Importar pack
+          </button>
+        </section>
+
         <div class="instance-form-grid">
           <label>Nombre<input name="name" type="text" required placeholder="Prominence II - Pruebas"></label>
           <label>ID opcional<input name="id" type="text" placeholder="prominence-pruebas"></label>

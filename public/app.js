@@ -26,6 +26,8 @@ const elements = {
     newInstanceDialog: $("#newInstanceDialog"),
     newInstanceForm: $("#newInstanceForm"),
     newInstanceStatus: $("#newInstanceStatus"),
+    importSourcePath: $("#importSourcePath"),
+    importInstanceBtn: $("#importInstanceBtn"),
     metricStatus: $("#metricStatus"),
     metricPort: $("#metricPort"),
     metricRam: $("#metricRam"),
@@ -1026,6 +1028,8 @@ function openNewInstanceDialog() {
     elements.newInstanceForm.elements.port.value =
         nextAvailablePort();
 
+    elements.importSourcePath.value = "";
+
     if (
         typeof elements.newInstanceDialog.showModal === "function"
     ) {
@@ -1078,6 +1082,46 @@ async function createInstance() {
     await refresh();
 
     notify("Instancia agregada correctamente.");
+}
+
+async function importInstance() {
+    const formData = new FormData(
+        elements.newInstanceForm
+    );
+
+    const body = Object.fromEntries(formData.entries());
+    body.sourcePath = elements.importSourcePath.value.trim();
+
+    if (!body.sourcePath) {
+        throw new Error("Pega la ruta de una carpeta o archivo .zip.");
+    }
+
+    elements.importInstanceBtn.setAttribute("aria-busy", "true");
+    elements.importInstanceBtn.disabled = true;
+    elements.newInstanceStatus.textContent = "Importando pack...";
+
+    try {
+        const payload = await api("/api/import-server", {
+            method: "POST",
+            body
+        });
+
+        if (payload.server) {
+            upsertServer(payload.server);
+            state.selected = payload.server.id;
+        }
+
+        clearServerScopedState();
+        render();
+        closeNewInstanceDialog();
+
+        await refresh();
+
+        notify("Pack importado como instancia.");
+    } finally {
+        elements.importInstanceBtn.removeAttribute("aria-busy");
+        elements.importInstanceBtn.disabled = false;
+    }
 }
 
 async function reloadActiveView() {
@@ -1348,6 +1392,18 @@ elements.newInstanceForm.addEventListener(
         event.preventDefault();
 
         createInstance().catch((error) => {
+            elements.newInstanceStatus.textContent =
+                error.message;
+
+            reportError(error);
+        });
+    }
+);
+
+elements.importInstanceBtn.addEventListener(
+    "click",
+    () => {
+        importInstance().catch((error) => {
             elements.newInstanceStatus.textContent =
                 error.message;
 

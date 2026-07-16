@@ -1397,6 +1397,7 @@ textarea::placeholder {
 .ram-form label,
 .settings-grid label,
 .automation-grid > label,
+.import-panel label,
 .instance-form-grid > label {
   display: grid;
   gap: 7px;
@@ -1432,6 +1433,7 @@ textarea::placeholder {
 
 .settings-grid .wide,
 .automation-grid .wide,
+.import-panel .wide,
 .instance-form-grid .wide {
   grid-column: 1 / -1;
 }
@@ -1565,6 +1567,34 @@ textarea::placeholder {
   margin-top: 5px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.import-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  border: 1px solid var(--accent-line);
+  border-radius: 13px;
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface-soft));
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.import-panel > div {
+  grid-column: 1 / -1;
+}
+
+.import-panel h3 {
+  margin: 3px 0 2px;
+  color: var(--text-soft);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.import-panel p {
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .instance-form-grid {
@@ -1844,6 +1874,7 @@ textarea::placeholder {
   .metrics,
   .ram-form,
   .player-list,
+  .import-panel,
   .instance-form-grid {
     grid-template-columns: 1fr;
   }

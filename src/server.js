@@ -10,6 +10,7 @@ import { COMMANDS, completeCommand } from "./minecraftCommands.js";
 const ROOT = resolve(import.meta.dirname, "..");
 const PUBLIC_DIR = join(ROOT, "public");
 const DATA_DIR = join(ROOT, "data");
+const SERVERS_DIR = join(ROOT, "servers");
 const CONFIG_FILE = join(DATA_DIR, "servers.json");
 const BACKUP_DIR = join(DATA_DIR, "backups");
 const PORT = Number(process.env.PORT || 4545);
@@ -43,6 +44,7 @@ const PROPERTY_KEYS = new Set(PROPERTY_FIELDS.map((field) => field.key));
 
 mkdirSync(DATA_DIR, { recursive: true });
 mkdirSync(BACKUP_DIR, { recursive: true });
+mkdirSync(SERVERS_DIR, { recursive: true });
 
 const logWatchers = new Map();
 const logBuffers = new Map();
@@ -211,6 +213,252 @@ function createServerRecord(config, body) {
     backupSchedule: validateCronSchedule(body?.backupSchedule),
     notifyWebhookUrl: normalizeWebhookUrl(body?.notifyWebhookUrl),
     notes: String(body?.notes || "").trim()
+  };
+}
+
+function uniqueServerPath(baseName) {
+  const slug = slugifyServerId(baseName) || "imported-server";
+  let candidate = join(SERVERS_DIR, slug);
+  let counter = 2;
+
+  while (existsSync(candidate)) {
+    candidate = join(SERVERS_DIR, `${slug}-${counter}`);
+    counter += 1;
+  }
+
+  return candidate;
+}
+
+function nextAvailablePort(config, preferred = 25566) {
+  const used = new Set(config.servers.map((server) => Number(server.port)).filter(Boolean));
+  let port = Number(preferred) || 25566;
+
+  while (used.has(port)) {
+    port += 1;
+  }
+
+  return port;
+}
+
+function readJsonIfExists(file) {
+  if (!existsSync(file)) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function curseForgeManifestInfo(folder) {
+  const manifest = readJsonIfExists(join(folder, "manifest.json"));
+  if (manifest?.manifestType !== "minecraftModpack") {
+    return null;
+  }
+
+  return {
+    name: manifest.name || "",
+    version: manifest.version || "",
+    minecraftVersion: manifest.minecraft?.version || "",
+    modLoader: manifest.minecraft?.modLoaders?.find((loader) => loader.primary)?.id || "",
+    files: Array.isArray(manifest.files) ? manifest.files.length : 0
+  };
+}
+
+function inspectZipForCurseForge(sourcePath) {
+  const result = spawnSync("unzip", ["-p", sourcePath, "manifest.json"], {
+    encoding: "utf8",
+    maxBuffer: 2 * 1024 * 1024
+  });
+
+  if (result.status !== 0 || !result.stdout) {
+    return null;
+  }
+
+  try {
+    const manifest = JSON.parse(result.stdout);
+    if (manifest.manifestType !== "minecraftModpack") {
+      return null;
+    }
+    return {
+      name: manifest.name || "",
+      version: manifest.version || "",
+      minecraftVersion: manifest.minecraft?.version || "",
+      modLoader: manifest.minecraft?.modLoaders?.find((loader) => loader.primary)?.id || "",
+      files: Array.isArray(manifest.files) ? manifest.files.length : 0
+    };
+  } catch {
+    return null;
+  }
+}
+
+function findStartScript(folder) {
+  const candidates = ["start.sh", "run.sh", "server-start.sh", "startserver.sh"];
+  return candidates.find((file) => existsSync(join(folder, file))) || "";
+}
+
+function findServerJar(folder) {
+  const entries = readdirSync(folder);
+  const jars = entries.filter((entry) => entry.toLowerCase().endsWith(".jar"));
+  return (
+    jars.find((entry) => /server|minecraft|forge|neoforge|fabric/i.test(entry)) ||
+    jars[0] ||
+    ""
+  );
+}
+
+function detectRunnableServerPack(folder, values = {}) {
+  const source = resolve(folder);
+  const sourceStat = statSync(source);
+  if (!sourceStat.isDirectory()) {
+    throw new Error("La ruta importada debe ser una carpeta de servidor.");
+  }
+
+  const curseForge = curseForgeManifestInfo(source);
+  if (curseForge) {
+    throw new Error(
+      `Ese paquete es un export de CurseForge (${curseForge.name || "sin nombre"} ${curseForge.version || ""}) con ${curseForge.files} mods. Aun necesita conversion antes de poder arrancar como servidor.`
+    );
+  }
+
+  const script = findStartScript(source);
+  const jar = findServerJar(source);
+  if (!script && !jar) {
+    throw new Error("No encontre start.sh/run.sh ni un .jar de servidor en la carpeta importada.");
+  }
+
+  const minRam = normalizeRamLabel(values.minRam) || "4G";
+  const maxRam = normalizeRamLabel(values.maxRam) || "8G";
+  const command = script
+    ? `bash ${script}`
+    : `java -Xms${minRam} -Xmx${maxRam} -jar ${shellQuote(jar)} nogui`;
+
+  return {
+    path: source,
+    command,
+    minRam,
+    maxRam,
+    detected: script ? `script:${script}` : `jar:${jar}`
+  };
+}
+
+function ensureServerDefaults(folder, values) {
+  const port = Number(values.port || 25565);
+  const motd = String(values.name || basename(folder)).replace(/[=\r\n]/g, " ").trim();
+  const variablesPath = join(folder, "variables.txt");
+  const eulaPath = join(folder, "eula.txt");
+  const propertiesPath = join(folder, "server.properties");
+
+  if (!existsSync(eulaPath)) {
+    writeFileSync(eulaPath, "# Accepted by Minecraft Control Center import\neula=true\n");
+  }
+
+  if (!existsSync(propertiesPath)) {
+    writeFileSync(propertiesPath, [
+      "# Generated by Minecraft Control Center",
+      `server-port=${port}`,
+      `motd=${motd || "Minecraft Control Center"}`,
+      "online-mode=true",
+      "white-list=false",
+      "enable-command-block=false",
+      ""
+    ].join("\n"));
+  }
+
+  if (!existsSync(variablesPath)) {
+    writeFileSync(variablesPath, `JAVA_ARGS="-Xmx${values.maxRam} -Xms${values.minRam}"\n`);
+  }
+}
+
+function extractZip(sourcePath, targetPath) {
+  const result = spawnSync("unzip", ["-q", sourcePath, "-d", targetPath], { encoding: "utf8" });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "No se pudo descomprimir el zip.").trim());
+  }
+}
+
+function rootAfterExtraction(targetPath) {
+  const entries = readdirSync(targetPath).filter((entry) => !entry.startsWith("__MACOSX"));
+  if (entries.length === 1) {
+    const only = join(targetPath, entries[0]);
+    if (statSync(only).isDirectory()) {
+      return only;
+    }
+  }
+  return targetPath;
+}
+
+function importServerPack(config, body) {
+  const sourcePath = resolve(String(body?.sourcePath || "").trim());
+  if (!sourcePath || !existsSync(sourcePath)) {
+    throw new Error("La ruta del pack no existe.");
+  }
+
+  const sourceStat = statSync(sourcePath);
+  const name = String(body?.name || "").trim() || basename(sourcePath).replace(/\.zip$/i, "");
+  const port = nextAvailablePort(config, body?.port || 25566);
+  let serverPath = sourcePath;
+  const notes = [];
+
+  if (sourceStat.isFile()) {
+    if (extname(sourcePath).toLowerCase() !== ".zip") {
+      throw new Error("Por ahora solo puedo importar archivos .zip o carpetas.");
+    }
+
+    const curseForge = inspectZipForCurseForge(sourcePath);
+    if (curseForge) {
+      throw new Error(
+        `Ese zip es un export de CurseForge (${curseForge.name || "sin nombre"} ${curseForge.version || ""}) con ${curseForge.files} mods. El importador de server packs ya lo detecta, pero la conversion automatica de CurseForge va en la siguiente etapa.`
+      );
+    }
+
+    serverPath = uniqueServerPath(name);
+    mkdirSync(serverPath, { recursive: true });
+    extractZip(sourcePath, serverPath);
+    serverPath = rootAfterExtraction(serverPath);
+    notes.push(`Importado desde zip: ${sourcePath}`);
+  } else if (!sourceStat.isDirectory()) {
+    throw new Error("La ruta del pack debe ser carpeta o archivo .zip.");
+  }
+
+  const detected = detectRunnableServerPack(serverPath, {
+    minRam: body?.minRam,
+    maxRam: body?.maxRam
+  });
+
+  const server = createServerRecord(config, {
+    ...body,
+    name,
+    id: body?.id || name,
+    path: detected.path,
+    command:
+      body?.command && body.command !== "bash start.sh"
+        ? body.command
+        : detected.command,
+    port,
+    minRam: detected.minRam,
+    maxRam: detected.maxRam,
+    notes: [String(body?.notes || "").trim(), ...notes, `Detectado: ${detected.detected}`]
+      .filter(Boolean)
+      .join("\n")
+  });
+
+  ensureServerDefaults(server.path, server);
+  config.servers.push(server);
+  saveConfig(config);
+  startLogWatcher(server);
+  reconcileScreenStates();
+
+  return {
+    ok: true,
+    server: publicServer(server),
+    detected: detected.detected,
+    notes
   };
 }
 
@@ -1223,6 +1471,12 @@ async function handleApi(request, response) {
     startLogWatcher(server);
     reconcileScreenStates();
     sendJson(response, 201, publicServer(server));
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/import-server") {
+    const body = await readBody(request);
+    sendJson(response, 201, importServerPack(config, body));
     return;
   }
 
