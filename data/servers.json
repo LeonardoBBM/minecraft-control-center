@@ -9,6 +9,8 @@
       "java": "system",
       "minRam": "6G",
       "maxRam": "12G",
+      "autoRestart": false,
+      "backupSchedule": "",
       "notes": "Servidor Fabric/Prominence II importado como registro inicial. No arranca solo."
     }
   ]

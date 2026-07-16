@@ -42,7 +42,10 @@ const elements = {
   ramCurrent: $("#ramCurrent"),
   ramRecommended: $("#ramRecommended"),
   minRamInput: $("#minRamInput"),
-  maxRamInput: $("#maxRamInput")
+  maxRamInput: $("#maxRamInput"),
+  settingBackupSchedule: $("#settingBackupSchedule"),
+  settingAutoRestart: $("#settingAutoRestart"),
+  automationStatus: $("#automationStatus")
 };
 
 async function api(path, options = {}) {
@@ -109,6 +112,9 @@ function render() {
   $("#settingPath").value = server.path || "";
   $("#settingCommand").value = server.command || "";
   $("#settingNotes").value = server.notes || "";
+  elements.settingBackupSchedule.value = server.backupSchedule || "";
+  elements.settingAutoRestart.checked = Boolean(server.autoRestart);
+  elements.automationStatus.textContent = "Automatizacion sin cambios";
   renderLogs();
   renderPlayers();
 }
@@ -448,6 +454,27 @@ async function saveRam() {
   elements.ramStatus.textContent = "Guardado. Reinicia el servidor para usar la nueva RAM.";
 }
 
+async function saveAutomation() {
+  const server = selectedServer();
+  if (!server) {
+    return;
+  }
+
+  elements.automationStatus.textContent = "Guardando...";
+  const payload = await api(`/api/servers/${server.id}/automation`, {
+    method: "PUT",
+    body: {
+      backupSchedule: elements.settingBackupSchedule.value,
+      autoRestart: elements.settingAutoRestart.checked
+    }
+  });
+  if (payload.server) {
+    upsertServer(payload.server);
+  }
+  render();
+  elements.automationStatus.textContent = "Automatizacion guardada.";
+}
+
 function openNewInstanceDialog() {
   elements.newInstanceStatus.textContent = "Registra una carpeta de server pack existente.";
   elements.newInstanceForm.reset();
@@ -585,6 +612,9 @@ $("#refreshFilesBtn").addEventListener("click", () => loadFiles().catch(alert));
 $("#reloadPropertiesBtn").addEventListener("click", () => loadProperties().catch(alert));
 $("#reloadRamBtn").addEventListener("click", () => loadRam().catch(alert));
 $("#reloadLogsBtn").addEventListener("click", () => loadPersistentLogs().catch(alert));
+$("#saveAutomationBtn").addEventListener("click", () => saveAutomation().catch((error) => {
+  elements.automationStatus.textContent = error.message;
+}));
 $("#recommendedRamBtn").addEventListener("click", () => {
   const memory = state.ram?.memory || state.memory;
   if (!memory) {

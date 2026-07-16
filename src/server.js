@@ -13,6 +13,9 @@ const DATA_DIR = join(ROOT, "data");
 const CONFIG_FILE = join(DATA_DIR, "servers.json");
 const BACKUP_DIR = join(DATA_DIR, "backups");
 const PORT = Number(process.env.PORT || 4545);
+const RESTART_WINDOW_MS = 5 * 60 * 1000;
+const RESTART_DELAY_MS = 10 * 1000;
+const MAX_RESTARTS_IN_WINDOW = 3;
 const PROPERTY_FIELDS = [
   { key: "motd", label: "Mensaje del servidor", type: "text", description: "Texto que aparece en la lista de servidores." },
   { key: "difficulty", label: "Dificultad", type: "select", options: ["peaceful", "easy", "normal", "hard"] },
@@ -45,6 +48,10 @@ const clients = new Set();
 const manualStops = new Set();
 const screenStates = new Map();
 const playerState = new Map();
+const scheduledRestarts = new Set();
+const restartAttempts = new Map();
+const runningBackups = new Set();
+const lastBackupRuns = new Map();
 
 function loadConfig() {
   return JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
@@ -63,6 +70,56 @@ function saveServerRecord(serverId, updates) {
   config.servers[index] = { ...config.servers[index], ...updates };
   saveConfig(config);
   return config.servers[index];
+}
+
+function normalizeBoolean(value) {
+  return value === true || value === "true" || value === "on" || value === 1 || value === "1";
+}
+
+function cronFieldIsValid(field, min, max) {
+  return field.split(",").every((part) => {
+    const item = part.trim();
+    if (item === "*") {
+      return true;
+    }
+    if (/^\*\/\d+$/.test(item)) {
+      return Number(item.slice(2)) > 0;
+    }
+    const rangeMatch = item.match(/^(\d+)-(\d+)$/);
+    if (rangeMatch) {
+      const start = Number(rangeMatch[1]);
+      const end = Number(rangeMatch[2]);
+      return start >= min && end <= max && start <= end;
+    }
+    const number = Number(item);
+    return Number.isInteger(number) && number >= min && number <= max;
+  });
+}
+
+function validateCronSchedule(value) {
+  const schedule = String(value || "").trim();
+  if (!schedule) {
+    return "";
+  }
+
+  const fields = schedule.split(/\s+/);
+  if (fields.length !== 5) {
+    throw new Error("El cron debe tener 5 campos: minuto hora dia mes dia-semana.");
+  }
+  const ranges = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]];
+  if (!fields.every((field, index) => cronFieldIsValid(field, ranges[index][0], ranges[index][1]))) {
+    throw new Error("El cron tiene un campo fuera de rango o con formato invalido.");
+  }
+
+  return schedule;
+}
+
+function updateAutomationSettings(serverId, values) {
+  const updates = {
+    autoRestart: normalizeBoolean(values?.autoRestart),
+    backupSchedule: validateCronSchedule(values?.backupSchedule)
+  };
+  return saveServerRecord(serverId, updates);
 }
 
 function slugifyServerId(value) {
@@ -126,6 +183,8 @@ function createServerRecord(config, body) {
     java: String(body?.java || "system").trim() || "system",
     minRam,
     maxRam,
+    autoRestart: normalizeBoolean(body?.autoRestart),
+    backupSchedule: validateCronSchedule(body?.backupSchedule),
     notes: String(body?.notes || "").trim()
   };
 }
@@ -323,6 +382,7 @@ function reconcileScreenStates() {
         playerState.set(server.id, new Map());
         if (!manualStops.has(server.id)) {
           appendLog(server.id, "screen session ended.", "system");
+          scheduleAutoRestart(server);
         }
         broadcastPlayers(server.id);
       }
@@ -334,6 +394,124 @@ function reconcileScreenStates() {
 function startScreenMonitor() {
   reconcileScreenStates();
   const timer = setInterval(reconcileScreenStates, 3000);
+  timer.unref();
+}
+
+function rememberRestartAttempt(server) {
+  const now = Date.now();
+  const recent = (restartAttempts.get(server.id) || []).filter((at) => now - at < RESTART_WINDOW_MS);
+  if (recent.length >= MAX_RESTARTS_IN_WINDOW) {
+    restartAttempts.set(server.id, recent);
+    return false;
+  }
+  recent.push(now);
+  restartAttempts.set(server.id, recent);
+  return true;
+}
+
+function scheduleAutoRestart(server) {
+  if (!server.autoRestart || scheduledRestarts.has(server.id)) {
+    return;
+  }
+  if (!rememberRestartAttempt(server)) {
+    appendLog(server.id, "Auto-restart skipped: retry limit reached.", "system");
+    return;
+  }
+
+  scheduledRestarts.add(server.id);
+  appendLog(server.id, "Auto-restart scheduled in 10 seconds.", "system");
+  setTimeout(() => {
+    scheduledRestarts.delete(server.id);
+    const current = findServer(server.id);
+    if (current && !isScreenRunning(current)) {
+      try {
+        startServer(current);
+      } catch (error) {
+        appendLog(server.id, `Auto-restart failed: ${error.message}`, "error");
+      }
+    }
+  }, RESTART_DELAY_MS).unref();
+}
+
+function cronFieldMatches(field, value, min, max) {
+  return field.split(",").some((part) => {
+    const item = part.trim();
+    if (!item) {
+      return false;
+    }
+    if (item === "*") {
+      return true;
+    }
+    if (item.startsWith("*/")) {
+      const step = Number(item.slice(2));
+      return Number.isInteger(step) && step > 0 && (value - min) % step === 0;
+    }
+    const rangeMatch = item.match(/^(\d+)-(\d+)$/);
+    if (rangeMatch) {
+      const start = Number(rangeMatch[1]);
+      const end = Number(rangeMatch[2]);
+      return value >= Math.max(min, start) && value <= Math.min(max, end);
+    }
+    const number = Number(item);
+    return Number.isInteger(number) && number >= min && number <= max && value === number;
+  });
+}
+
+function cronMatches(schedule, date) {
+  const fields = validateCronSchedule(schedule).split(/\s+/);
+  return (
+    cronFieldMatches(fields[0], date.getMinutes(), 0, 59) &&
+    cronFieldMatches(fields[1], date.getHours(), 0, 23) &&
+    cronFieldMatches(fields[2], date.getDate(), 1, 31) &&
+    cronFieldMatches(fields[3], date.getMonth() + 1, 1, 12) &&
+    cronFieldMatches(fields[4], date.getDay(), 0, 6)
+  );
+}
+
+function backupRunKey(server, date) {
+  const minuteKey = [
+    date.getFullYear(),
+    date.getMonth() + 1,
+    date.getDate(),
+    date.getHours(),
+    date.getMinutes()
+  ].join("-");
+  return `${server.id}:${server.backupSchedule}:${minuteKey}`;
+}
+
+function runScheduledBackups() {
+  const now = new Date();
+  for (const server of loadConfig().servers) {
+    if (!server.backupSchedule || runningBackups.has(server.id)) {
+      continue;
+    }
+
+    let matches = false;
+    try {
+      matches = cronMatches(server.backupSchedule, now);
+    } catch (error) {
+      appendLog(server.id, `Backup schedule ignored: ${error.message}`, "error");
+      continue;
+    }
+
+    const key = backupRunKey(server, now);
+    if (!matches || lastBackupRuns.get(server.id) === key) {
+      continue;
+    }
+
+    lastBackupRuns.set(server.id, key);
+    runningBackups.add(server.id);
+    appendLog(server.id, `Scheduled backup started: ${server.backupSchedule}`, "system");
+    createBackup(server)
+      .then((result) => appendLog(server.id, `Scheduled backup finished: ${result.path}`, "system"))
+      .catch((error) => appendLog(server.id, `Scheduled backup failed: ${error.message}`, "error"))
+      .finally(() => runningBackups.delete(server.id));
+  }
+}
+
+function startBackupScheduler() {
+  runScheduledBackups();
+  const timer = setInterval(runScheduledBackups, 60 * 1000);
   timer.unref();
 }
 
@@ -877,6 +1055,11 @@ async function handleApi(request, response) {
       sendJson(response, 200, updateServerRam(server, body));
       return;
     }
+    if (request.method === "PUT" && action === "automation") {
+      const body = await readBody(request);
+      sendJson(response, 200, { server: publicServer(updateAutomationSettings(server.id, body)) });
+      return;
+    }
   }
 
   sendJson(response, 404, { error: "Ruta no encontrada." });
@@ -902,6 +1085,7 @@ wss.on("connection", (socket) => {
 
 startAllLogWatchers();
 startScreenMonitor();
+startBackupScheduler();
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Minecraft Control Center running at http://127.0.0.1:${PORT}`);

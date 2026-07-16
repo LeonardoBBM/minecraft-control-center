@@ -67,6 +67,15 @@ El panel arranca cada servidor dentro de una sesion `screen` llamada `mc-<id-del
 
 Cada instancia usa el `logs/latest.log` de Minecraft como fuente persistente de consola. Al arrancar o reiniciar el panel se cargan las ultimas lineas disponibles desde disco, y la vista **Consola** tiene un boton **Recargar logs** para volver a leer ese archivo sin tocar el proceso del servidor.
 
+## Automatizacion
+
+Cada servidor puede definir:
+
+- `backupSchedule`: cron simple de 5 campos, por ejemplo `0 4 * * *`.
+- `autoRestart`: si es `true`, el panel intenta levantar de nuevo la sesion `screen` cuando detecta que termino sin un `stop` manual.
+
+El auto-restart espera 10 segundos y limita los reintentos a 3 en una ventana de 5 minutos para evitar ciclos de crash. La configuracion se puede editar desde la pestaña **Configuracion**.
+
 ## Seguridad
 
 El panel escucha solo en `127.0.0.1`. No esta pensado para exponerse a internet sin autenticacion, HTTPS y un proxy seguro.

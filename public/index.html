@@ -197,6 +197,18 @@
               Notas
               <textarea id="settingNotes" readonly></textarea>
             </label>
+            <label>
+              Backup cron
+              <input id="settingBackupSchedule" placeholder="0 4 * * *" />
+            </label>
+            <label class="settings-checkbox">
+              <input id="settingAutoRestart" type="checkbox" />
+              Auto-restart
+            </label>
+            <div class="settings-actions">
+              <span id="automationStatus">Automatizacion sin cambios</span>
+              <button class="primary" id="saveAutomationBtn" type="button">Guardar automatizacion</button>
+            </div>
           </section>
         </section>
       </main>
@@ -244,6 +256,14 @@
           <label class="wide">
             Notas
             <textarea name="notes" placeholder="Modpack, version o detalles importantes"></textarea>
+          </label>
+          <label>
+            Backup cron
+            <input name="backupSchedule" placeholder="0 4 * * *" />
+          </label>
+          <label class="instance-checkbox">
+            <input name="autoRestart" type="checkbox" value="true" />
+            Auto-restart
           </label>
         </div>
 
