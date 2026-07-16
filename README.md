@@ -32,6 +32,32 @@ Luego abre:
 http://127.0.0.1:4545
 ```
 
+## Autoarranque con systemd
+
+El repo incluye una plantilla en:
+
+```text
+systemd/minecraft-control-center.service
+```
+
+Para instalarla en esta maquina:
+
+```bash
+sudo cp systemd/minecraft-control-center.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now minecraft-control-center.service
+```
+
+Comandos utiles:
+
+```bash
+systemctl status minecraft-control-center.service
+journalctl -u minecraft-control-center.service -f
+sudo systemctl restart minecraft-control-center.service
+```
+
+La plantilla mantiene `127.0.0.1:4545`, usa `User=leonardo`, `WorkingDirectory` apuntando a este repo y `Restart=on-failure`.
+
 ## Configuracion de servidores
 
 Los servidores se registran en:

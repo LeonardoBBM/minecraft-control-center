@@ -1,0 +1,15 @@
+[Unit]
+Description=Minecraft Control Center
+After=network.target
+
+[Service]
+Type=simple
+User=leonardo
+WorkingDirectory=/home/leonardo/.openclaw/workspace/minecraft-control-center
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
