@@ -117,10 +117,31 @@ function validateCronSchedule(value) {
   return schedule;
 }
 
+function normalizeWebhookUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) {
+    return "";
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("El webhook debe ser una URL valida.");
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("El webhook debe usar http o https.");
+  }
+
+  return parsed.toString();
+}
+
 function updateAutomationSettings(serverId, values) {
   const updates = {
     autoRestart: normalizeBoolean(values?.autoRestart),
-    backupSchedule: validateCronSchedule(values?.backupSchedule)
+    backupSchedule: validateCronSchedule(values?.backupSchedule),
+    notifyWebhookUrl: normalizeWebhookUrl(values?.notifyWebhookUrl)
   };
   return saveServerRecord(serverId, updates);
 }
@@ -188,6 +209,7 @@ function createServerRecord(config, body) {
     maxRam,
     autoRestart: normalizeBoolean(body?.autoRestart),
     backupSchedule: validateCronSchedule(body?.backupSchedule),
+    notifyWebhookUrl: normalizeWebhookUrl(body?.notifyWebhookUrl),
     notes: String(body?.notes || "").trim()
   };
 }
@@ -362,6 +384,29 @@ function appendLog(serverId, line, stream = "system") {
   broadcast("log", { serverId, ...item });
 }
 
+function notifyServer(server, event, message, details = {}) {
+  if (!server.notifyWebhookUrl) {
+    return;
+  }
+
+  const payload = {
+    event,
+    serverId: server.id,
+    serverName: server.name,
+    message,
+    at: new Date().toISOString(),
+    details
+  };
+
+  fetch(server.notifyWebhookUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  }).catch((error) => {
+    appendLog(server.id, `Notification failed: ${error.message}`, "error");
+  });
+}
+
 function latestLogFile(server) {
   return join(resolve(server.path), "logs", "latest.log");
 }
@@ -463,6 +508,10 @@ function reconcileScreenStates() {
         playerState.set(server.id, new Map());
         if (!manualStops.has(server.id)) {
           appendLog(server.id, "screen session ended.", "system");
+          notifyServer(server, "server_stopped_unexpectedly", "La sesion screen del servidor termino inesperadamente.", {
+            session: screenSessionName(server),
+            previousPid: previous.pid || null
+          });
           scheduleAutoRestart(server);
         }
         broadcastPlayers(server.id);
@@ -508,11 +557,18 @@ function scheduleAutoRestart(server) {
   }
   if (!rememberRestartAttempt(server)) {
     appendLog(server.id, "Auto-restart skipped: retry limit reached.", "system");
+    notifyServer(server, "server_auto_restart_limited", "Auto-restart detenido por limite de reintentos.", {
+      maxRestarts: MAX_RESTARTS_IN_WINDOW,
+      windowMs: RESTART_WINDOW_MS
+    });
     return;
   }
 
   scheduledRestarts.add(server.id);
   appendLog(server.id, "Auto-restart scheduled in 10 seconds.", "system");
+  notifyServer(server, "server_auto_restart_scheduled", "Auto-restart programado tras una caida.", {
+    delayMs: RESTART_DELAY_MS
+  });
   setTimeout(() => {
     scheduledRestarts.delete(server.id);
     const current = findServer(server.id);
@@ -521,6 +577,9 @@ function scheduleAutoRestart(server) {
         startServer(current);
       } catch (error) {
         appendLog(server.id, `Auto-restart failed: ${error.message}`, "error");
+        notifyServer(current, "server_auto_restart_failed", "Auto-restart fallo.", {
+          error: error.message
+        });
       }
     }
   }, RESTART_DELAY_MS).unref();
@@ -597,7 +656,13 @@ function runScheduledBackups() {
     appendLog(server.id, `Scheduled backup started: ${server.backupSchedule}`, "system");
     createBackup(server)
       .then((result) => appendLog(server.id, `Scheduled backup finished: ${result.path}`, "system"))
-      .catch((error) => appendLog(server.id, `Scheduled backup failed: ${error.message}`, "error"))
+      .catch((error) => {
+        appendLog(server.id, `Scheduled backup failed: ${error.message}`, "error");
+        notifyServer(server, "scheduled_backup_failed", "Backup programado fallo.", {
+          schedule: server.backupSchedule,
+          error: error.message
+        });
+      })
       .finally(() => runningBackups.delete(server.id));
   }
 }

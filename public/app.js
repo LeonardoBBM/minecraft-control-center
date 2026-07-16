@@ -56,6 +56,7 @@ const elements = {
   minRamInput: $("#minRamInput"),
   maxRamInput: $("#maxRamInput"),
   settingBackupSchedule: $("#settingBackupSchedule"),
+  settingNotifyWebhookUrl: $("#settingNotifyWebhookUrl"),
   settingAutoRestart: $("#settingAutoRestart"),
   automationStatus: $("#automationStatus")
 };
@@ -129,6 +130,7 @@ function render() {
   $("#settingCommand").value = server.command || "";
   $("#settingNotes").value = server.notes || "";
   elements.settingBackupSchedule.value = server.backupSchedule || "";
+  elements.settingNotifyWebhookUrl.value = server.notifyWebhookUrl || "";
   elements.settingAutoRestart.checked = Boolean(server.autoRestart);
   elements.automationStatus.textContent = "Automatizacion sin cambios";
   renderLogs();
@@ -523,6 +525,7 @@ async function saveAutomation() {
     method: "PUT",
     body: {
       backupSchedule: elements.settingBackupSchedule.value,
+      notifyWebhookUrl: elements.settingNotifyWebhookUrl.value,
       autoRestart: elements.settingAutoRestart.checked
     }
   });

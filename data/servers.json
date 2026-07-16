@@ -11,6 +11,7 @@
       "maxRam": "12G",
       "autoRestart": false,
       "backupSchedule": "",
+      "notifyWebhookUrl": "",
       "notes": "Servidor Fabric/Prominence II importado como registro inicial. No arranca solo."
     }
   ]

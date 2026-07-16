@@ -73,8 +73,24 @@ Cada servidor puede definir:
 
 - `backupSchedule`: cron simple de 5 campos, por ejemplo `0 4 * * *`.
 - `autoRestart`: si es `true`, el panel intenta levantar de nuevo la sesion `screen` cuando detecta que termino sin un `stop` manual.
+- `notifyWebhookUrl`: URL opcional para recibir eventos importantes.
 
 El auto-restart espera 10 segundos y limita los reintentos a 3 en una ventana de 5 minutos para evitar ciclos de crash. La configuracion se puede editar desde la pestaña **Configuracion**.
+
+## Notificaciones
+
+Si una instancia tiene `notifyWebhookUrl`, el panel envia un `POST` JSON cuando detecta una caida inesperada, programa/falla un auto-restart o falla un backup programado. El payload tiene esta forma:
+
+```json
+{
+  "event": "server_stopped_unexpectedly",
+  "serverId": "prominence-ii",
+  "serverName": "Prominence II - Hasturian Era",
+  "message": "La sesion screen del servidor termino inesperadamente.",
+  "at": "2026-07-16T08:00:00.000Z",
+  "details": {}
+}
+```
 
 ## CPU/RAM real
 
