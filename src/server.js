@@ -841,7 +841,7 @@ function sendCommand(server, command) {
   return { ok: true };
 }
 
-function stopServer(server) {
+function stopServer(server, options = {}) {
   if (!isScreenRunning(server)) {
     return { ok: true, alreadyStopped: true };
   }
@@ -854,7 +854,9 @@ function stopServer(server) {
       runScreen(["-S", screenSessionName(server), "-X", "quit"]);
       appendLog(server.id, "screen session closed after graceful stop timeout.", "system");
     }
-    manualStops.delete(server.id);
+    if (!options.keepManualStop) {
+      manualStops.delete(server.id);
+    }
     broadcast("server-state", { serverId: server.id, running: false, pid: null, usage: null });
     broadcastPlayers(server.id);
   }, 20000).unref();
@@ -1242,8 +1244,12 @@ async function handleApi(request, response) {
     }
     if (request.method === "POST" && action === "restart") {
       if (isScreenRunning(server)) {
-        stopServer(server);
-        setTimeout(() => startServer(server), 22000).unref();
+        manualStops.add(server.id);
+        stopServer(server, { keepManualStop: true });
+        setTimeout(() => {
+          manualStops.delete(server.id);
+          startServer(server);
+        }, 22000).unref();
       } else {
         startServer(server);
       }

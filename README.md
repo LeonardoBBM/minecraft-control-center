@@ -150,7 +150,5 @@ El guardado conserva comentarios y propiedades avanzadas del archivo. La mayoria
 ## Siguientes mejoras
 
 - Gestion de mods y datapacks.
-- Backups programados.
 - Usuarios/login.
-- Estadisticas reales de CPU/RAM por proceso.
-- Integracion opcional con servidores ya administrados por systemd o Crafty.
+- Integracion opcional con servidores ya administrados por Crafty, si todavia aplica.
