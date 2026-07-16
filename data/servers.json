@@ -3,12 +3,12 @@
     {
       "id": "prominence-ii",
       "name": "Prominence II - Hasturian Era",
-      "path": "/home/leonardo/Escritorio/Prominence_II_Hasturian_Era_Server_Pack_v3.9.27",
+      "path": "/home/leonardo/.openclaw/workspace/minecraft-control-center/servers/prominence",
       "command": "bash start.sh",
       "port": 25565,
       "java": "system",
-      "minRam": "4G",
-      "maxRam": "8G",
+      "minRam": "6G",
+      "maxRam": "12G",
       "notes": "Servidor Fabric/Prominence II importado como registro inicial. No arranca solo."
     }
   ]

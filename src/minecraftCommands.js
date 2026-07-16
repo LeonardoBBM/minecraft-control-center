@@ -37,7 +37,12 @@ export function completeCommand(input) {
     return COMMANDS.slice(0, 8);
   }
 
+  const prefixMatches = COMMANDS.filter((entry) => entry.command.startsWith(normalized));
+  if (prefixMatches.length) {
+    return prefixMatches.slice(0, 8);
+  }
+
   return COMMANDS
-    .filter((entry) => entry.command.startsWith(normalized) || entry.syntax.toLowerCase().includes(normalized))
+    .filter((entry) => entry.command.includes(normalized) || entry.syntax.toLowerCase().includes(normalized))
     .slice(0, 8);
 }

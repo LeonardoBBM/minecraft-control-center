@@ -20,6 +20,8 @@
           <button class="nav-item active" data-view="dashboard">Panel</button>
           <button class="nav-item" data-view="console">Consola</button>
           <button class="nav-item" data-view="files">Archivos</button>
+          <button class="nav-item" data-view="properties">Propiedades</button>
+          <button class="nav-item" data-view="performance">RAM</button>
           <button class="nav-item" data-view="settings">Configuracion</button>
         </nav>
       </aside>
@@ -30,7 +32,11 @@
             <h1 id="serverName">Servidor</h1>
             <p id="serverPath">Cargando...</p>
           </div>
-          <div class="status-pill" id="statusPill">Desconectado</div>
+          <div class="topbar-actions">
+            <select id="serverSelect" aria-label="Instancia"></select>
+            <button id="newInstanceBtn" type="button">Nueva instancia</button>
+            <div class="status-pill" id="statusPill">Desconectado</div>
+          </div>
         </header>
 
         <section class="view active" id="dashboard">
@@ -67,6 +73,17 @@
             </div>
             <div class="mini-log" id="miniLog"></div>
           </section>
+
+          <section class="panel players-panel">
+            <div class="panel-title">
+              <div>
+                <h2>Jugadores conectados</h2>
+                <span id="playerCount">0 conectados</span>
+              </div>
+              <button id="refreshPlayersBtn">Actualizar</button>
+            </div>
+            <div class="player-list" id="playerList"></div>
+          </section>
         </section>
 
         <section class="view" id="console">
@@ -96,6 +113,66 @@
           </section>
         </section>
 
+        <section class="view" id="properties">
+          <section class="panel">
+            <div class="panel-title">
+              <div>
+                <h2>server.properties</h2>
+                <span id="propertiesStatus">Sin cargar</span>
+              </div>
+              <div class="panel-actions">
+                <button id="reloadPropertiesBtn">Recargar</button>
+                <button class="primary" id="savePropertiesBtn" type="submit" form="propertiesForm">Guardar</button>
+              </div>
+            </div>
+            <form class="properties-grid" id="propertiesForm"></form>
+            <p class="hint">La mayoria de cambios necesita reiniciar el servidor para aplicarse.</p>
+          </section>
+        </section>
+
+        <section class="view" id="performance">
+          <section class="panel">
+            <div class="panel-title">
+              <div>
+                <h2>RAM / Rendimiento</h2>
+                <span id="ramStatus">Sin cargar</span>
+              </div>
+              <div class="panel-actions">
+                <button id="reloadRamBtn">Recargar</button>
+                <button id="recommendedRamBtn" type="button">Usar recomendado</button>
+                <button class="primary" id="saveRamBtn" type="submit" form="ramForm">Guardar</button>
+              </div>
+            </div>
+
+            <div class="ram-summary">
+              <article>
+                <span>Laptop</span>
+                <strong id="ramSystem">--</strong>
+              </article>
+              <article>
+                <span>Servidor actual</span>
+                <strong id="ramCurrent">--</strong>
+              </article>
+              <article>
+                <span>Recomendado</span>
+                <strong id="ramRecommended">--</strong>
+              </article>
+            </div>
+
+            <form class="ram-form" id="ramForm">
+              <label>
+                RAM minima (GB)
+                <input id="minRamInput" type="number" min="1" step="1" />
+              </label>
+              <label>
+                RAM maxima (GB)
+                <input id="maxRamInput" type="number" min="1" step="1" />
+              </label>
+            </form>
+            <p class="hint">El panel limita el maximo a <span id="ramLimit">--</span> para dejar memoria libre al sistema. Reinicia el servidor para aplicar cambios.</p>
+          </section>
+        </section>
+
         <section class="view" id="settings">
           <section class="panel settings-grid">
             <label>
@@ -118,6 +195,58 @@
         </section>
       </main>
     </div>
+
+    <dialog class="modal" id="newInstanceDialog">
+      <form class="modal-panel" id="newInstanceForm" method="dialog">
+        <div class="panel-title">
+          <div>
+            <h2>Nueva instancia</h2>
+            <span id="newInstanceStatus">Registra una carpeta de server pack existente.</span>
+          </div>
+          <button id="closeNewInstanceBtn" type="button">Cerrar</button>
+        </div>
+
+        <div class="instance-form-grid">
+          <label>
+            Nombre
+            <input name="name" required placeholder="Prominence II - Pruebas" />
+          </label>
+          <label>
+            ID opcional
+            <input name="id" placeholder="prominence-pruebas" />
+          </label>
+          <label class="wide">
+            Carpeta del modpack
+            <input name="path" required placeholder="/home/leonardo/ruta/al/server-pack" />
+          </label>
+          <label>
+            Comando
+            <input name="command" value="bash start.sh" required />
+          </label>
+          <label>
+            Puerto
+            <input name="port" type="number" min="1" max="65535" value="25566" required />
+          </label>
+          <label>
+            RAM minima
+            <input name="minRam" placeholder="4G" />
+          </label>
+          <label>
+            RAM maxima
+            <input name="maxRam" placeholder="8G" />
+          </label>
+          <label class="wide">
+            Notas
+            <textarea name="notes" placeholder="Modpack, version o detalles importantes"></textarea>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelNewInstanceBtn">Cancelar</button>
+          <button class="primary" type="submit">Agregar instancia</button>
+        </div>
+      </form>
+    </dialog>
     <script src="/app.js" type="module"></script>
   </body>
 </html>
