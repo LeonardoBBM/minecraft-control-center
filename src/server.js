@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { cp, readdir, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -13,6 +13,8 @@ const DATA_DIR = join(ROOT, "data");
 const CONFIG_FILE = join(DATA_DIR, "servers.json");
 const BACKUP_DIR = join(DATA_DIR, "backups");
 const PORT = Number(process.env.PORT || 4545);
+const PAGE_SIZE = 4096;
+const CLOCK_TICKS_PER_SECOND = Number(spawnSync("getconf", ["CLK_TCK"], { encoding: "utf8" }).stdout || 100);
 const RESTART_WINDOW_MS = 5 * 60 * 1000;
 const RESTART_DELAY_MS = 10 * 1000;
 const MAX_RESTARTS_IN_WINDOW = 3;
@@ -52,6 +54,7 @@ const scheduledRestarts = new Set();
 const restartAttempts = new Map();
 const runningBackups = new Set();
 const lastBackupRuns = new Map();
+const usageSamples = new Map();
 
 function loadConfig() {
   return JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
@@ -231,6 +234,82 @@ function runScreen(args) {
   return result;
 }
 
+function readProcessInfo(pid) {
+  try {
+    const statRaw = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const closeIndex = statRaw.lastIndexOf(")");
+    const name = statRaw.slice(statRaw.indexOf("(") + 1, closeIndex);
+    const fields = statRaw.slice(closeIndex + 2).trim().split(/\s+/);
+    const cmdline = readFileSync(`/proc/${pid}/cmdline`, "utf8").replace(/\0/g, " ").trim();
+    return {
+      pid: Number(pid),
+      name,
+      ppid: Number(fields[1]),
+      ticks: Number(fields[11]) + Number(fields[12]),
+      rssBytes: Number(fields[21]) * PAGE_SIZE,
+      cmdline
+    };
+  } catch {
+    return null;
+  }
+}
+
+function listProcesses() {
+  return readdirSync("/proc")
+    .filter((entry) => /^\d+$/.test(entry))
+    .map(readProcessInfo)
+    .filter(Boolean);
+}
+
+function collectDescendants(rootPid) {
+  const processes = listProcesses();
+  const children = new Map();
+  for (const process of processes) {
+    const group = children.get(process.ppid) || [];
+    group.push(process);
+    children.set(process.ppid, group);
+  }
+
+  const descendants = [];
+  const queue = [...(children.get(rootPid) || [])];
+  while (queue.length) {
+    const process = queue.shift();
+    descendants.push(process);
+    queue.push(...(children.get(process.pid) || []));
+  }
+  return descendants;
+}
+
+function measureProcessUsage(server, screenPid) {
+  if (!screenPid) {
+    usageSamples.delete(server.id);
+    return null;
+  }
+
+  const descendants = collectDescendants(screenPid);
+  const javaProcess = descendants.find((process) => /\bjava\b/.test(process.cmdline || process.name));
+  const measured = descendants.length ? descendants : [readProcessInfo(screenPid)].filter(Boolean);
+  const ticks = measured.reduce((total, process) => total + process.ticks, 0);
+  const rssBytes = measured.reduce((total, process) => total + process.rssBytes, 0);
+  const now = Date.now();
+  const previous = usageSamples.get(server.id);
+  let cpuPercent = 0;
+
+  if (previous && now > previous.at && ticks >= previous.ticks) {
+    const elapsedSeconds = (now - previous.at) / 1000;
+    cpuPercent = ((ticks - previous.ticks) / CLOCK_TICKS_PER_SECOND / elapsedSeconds) * 100;
+  }
+
+  usageSamples.set(server.id, { at: now, ticks });
+  return {
+    processPid: javaProcess?.pid || measured[0]?.pid || screenPid,
+    processName: javaProcess ? "java" : measured[0]?.name || "screen",
+    processCount: measured.length,
+    cpuPercent: Number(cpuPercent.toFixed(1)),
+    rssMb: Number((rssBytes / 1024 / 1024).toFixed(1))
+  };
+}
+
 function findServer(id) {
   return loadConfig().servers.find((server) => server.id === id);
 }
@@ -239,12 +318,14 @@ function publicServer(server) {
   const info = screenInfo(server);
   const running = Boolean(info);
   const logs = logBuffers.get(server.id) || [];
+  const usage = running ? measureProcessUsage(server, info.pid) : null;
   return {
     ...server,
     running,
     pid: running ? info.pid : null,
     supervisor: "screen",
     session: screenSessionName(server),
+    usage,
     logFile: latestLogFile(server),
     recentLogs: logs.slice(-80),
     players: publicPlayers(server)
@@ -386,7 +467,19 @@ function reconcileScreenStates() {
         }
         broadcastPlayers(server.id);
       }
-      broadcast("server-state", { serverId: server.id, running, pid: info?.pid || null });
+      broadcast("server-state", {
+        serverId: server.id,
+        running,
+        pid: info?.pid || null,
+        usage: running ? measureProcessUsage(server, info?.pid || null) : null
+      });
+    } else if (running) {
+      broadcast("server-state", {
+        serverId: server.id,
+        running,
+        pid: info?.pid || null,
+        usage: measureProcessUsage(server, info?.pid || null)
+      });
     }
   }
 }
@@ -664,7 +757,12 @@ function startServer(server) {
   runScreen(["-dmS", session, "bash", "-lc", launchCommand]);
 
   const info = screenInfo(server);
-  broadcast("server-state", { serverId: server.id, running: true, pid: info?.pid || null });
+  broadcast("server-state", {
+    serverId: server.id,
+    running: true,
+    pid: info?.pid || null,
+    usage: info ? measureProcessUsage(server, info.pid) : null
+  });
   broadcastPlayers(server.id);
   return { ok: true, pid: info?.pid || null, session };
 }
@@ -692,7 +790,7 @@ function stopServer(server) {
       appendLog(server.id, "screen session closed after graceful stop timeout.", "system");
     }
     manualStops.delete(server.id);
-    broadcast("server-state", { serverId: server.id, running: false, pid: null });
+    broadcast("server-state", { serverId: server.id, running: false, pid: null, usage: null });
     broadcastPlayers(server.id);
   }, 20000).unref();
   return { ok: true };

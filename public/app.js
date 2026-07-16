@@ -25,6 +25,8 @@ const elements = {
   metricPort: $("#metricPort"),
   metricRam: $("#metricRam"),
   metricPid: $("#metricPid"),
+  metricCpu: $("#metricCpu"),
+  metricMemory: $("#metricMemory"),
   miniLog: $("#miniLog"),
   consoleLog: $("#consoleLog"),
   consoleLogSource: $("#consoleLogSource"),
@@ -107,6 +109,8 @@ function render() {
   elements.metricPort.textContent = server.port || "--";
   elements.metricRam.textContent = [server.minRam, server.maxRam].filter(Boolean).join(" / ") || "--";
   elements.metricPid.textContent = server.pid || "--";
+  elements.metricCpu.textContent = server.usage ? `${server.usage.cpuPercent}%` : "--";
+  elements.metricMemory.textContent = server.usage ? `${server.usage.rssMb} MB` : "--";
   elements.consoleLogSource.textContent = server.logFile || "logs/latest.log";
   $("#settingName").value = server.name || "";
   $("#settingPath").value = server.path || "";
@@ -549,6 +553,7 @@ function connectSocket() {
       if (server) {
         server.running = message.payload.running;
         server.pid = message.payload.pid;
+        server.usage = message.payload.usage;
         render();
       }
     }

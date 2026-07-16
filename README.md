@@ -76,6 +76,10 @@ Cada servidor puede definir:
 
 El auto-restart espera 10 segundos y limita los reintentos a 3 en una ventana de 5 minutos para evitar ciclos de crash. La configuracion se puede editar desde la pestaña **Configuracion**.
 
+## CPU/RAM real
+
+Cuando una instancia esta corriendo, el panel busca los procesos hijos de la sesion `screen`, detecta el proceso Java si existe y calcula uso real leyendo `/proc`. El dashboard muestra CPU y RAM reales junto al PID de la sesion.
+
 ## Seguridad
 
 El panel escucha solo en `127.0.0.1`. No esta pensado para exponerse a internet sin autenticacion, HTTPS y un proxy seguro.
