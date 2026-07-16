@@ -63,6 +63,10 @@ El panel arranca cada servidor dentro de una sesion `screen` llamada `mc-<id-del
 - Detener manda `stop` y, si la sesion no cierra, hace `screen -X quit` despues de un tiempo de gracia.
 - La consola del panel lee `logs/latest.log` del servidor, no stdout directo de Node.
 
+## Logs persistentes
+
+Cada instancia usa el `logs/latest.log` de Minecraft como fuente persistente de consola. Al arrancar o reiniciar el panel se cargan las ultimas lineas disponibles desde disco, y la vista **Consola** tiene un boton **Recargar logs** para volver a leer ese archivo sin tocar el proceso del servidor.
+
 ## Seguridad
 
 El panel escucha solo en `127.0.0.1`. No esta pensado para exponerse a internet sin autenticacion, HTTPS y un proxy seguro.

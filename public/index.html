@@ -89,8 +89,14 @@
         <section class="view" id="console">
           <section class="panel console-panel">
             <div class="panel-title">
-              <h2>Consola en vivo</h2>
-              <button id="clearConsoleBtn">Limpiar vista</button>
+              <div>
+                <h2>Consola en vivo</h2>
+                <span id="consoleLogSource">logs/latest.log</span>
+              </div>
+              <div class="panel-actions">
+                <button id="reloadLogsBtn" type="button">Recargar logs</button>
+                <button id="clearConsoleBtn" type="button">Limpiar vista</button>
+              </div>
             </div>
             <div class="console" id="consoleLog"></div>
             <form class="command-row" id="commandForm">

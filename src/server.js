@@ -186,6 +186,7 @@ function publicServer(server) {
     pid: running ? info.pid : null,
     supervisor: "screen",
     session: screenSessionName(server),
+    logFile: latestLogFile(server),
     recentLogs: logs.slice(-80),
     players: publicPlayers(server)
   };
@@ -225,28 +226,33 @@ function latestLogFile(server) {
   return join(resolve(server.path), "logs", "latest.log");
 }
 
-function readRecentLogLines(server, count = 200) {
+function readRecentLogEntries(server, count = 200) {
   const file = latestLogFile(server);
   if (!existsSync(file)) {
     return [];
   }
 
+  const now = new Date().toISOString();
   return readFileSync(file, "utf8")
     .split(/\r?\n/)
     .filter(Boolean)
-    .slice(-count);
+    .slice(-count)
+    .map((line) => ({ stream: "stdout", line, at: now }));
+}
+
+function reloadLogBuffer(server, count = 200) {
+  const entries = readRecentLogEntries(server, count);
+  logBuffers.set(server.id, entries);
+  playerState.set(server.id, new Map());
+  for (const entry of entries) {
+    updatePlayersFromLog(server.id, entry.line);
+  }
+  return { file: latestLogFile(server), entries };
 }
 
 function seedLogBuffer(server) {
-  if (logBuffers.has(server.id)) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  const lines = readRecentLogLines(server).map((line) => ({ stream: "stdout", line, at: now }));
-  logBuffers.set(server.id, lines);
-  for (const entry of lines) {
-    updatePlayersFromLog(server.id, entry.line);
+  if (!logBuffers.has(server.id)) {
+    reloadLogBuffer(server);
   }
 }
 
@@ -838,6 +844,10 @@ async function handleApi(request, response) {
     }
     if (request.method === "GET" && action === "files") {
       sendJson(response, 200, { path: server.path, entries: await getDirectorySummary(server.path) });
+      return;
+    }
+    if (request.method === "GET" && action === "logs") {
+      sendJson(response, 200, reloadLogBuffer(server));
       return;
     }
     if (request.method === "GET" && action === "players") {

@@ -27,6 +27,7 @@ const elements = {
   metricPid: $("#metricPid"),
   miniLog: $("#miniLog"),
   consoleLog: $("#consoleLog"),
+  consoleLogSource: $("#consoleLogSource"),
   logCount: $("#logCount"),
   commandInput: $("#commandInput"),
   suggestions: $("#suggestions"),
@@ -103,6 +104,7 @@ function render() {
   elements.metricPort.textContent = server.port || "--";
   elements.metricRam.textContent = [server.minRam, server.maxRam].filter(Boolean).join(" / ") || "--";
   elements.metricPid.textContent = server.pid || "--";
+  elements.consoleLogSource.textContent = server.logFile || "logs/latest.log";
   $("#settingName").value = server.name || "";
   $("#settingPath").value = server.path || "";
   $("#settingCommand").value = server.command || "";
@@ -272,6 +274,17 @@ async function loadPlayers() {
   const payload = await api(`/api/servers/${server.id}/players`);
   state.players = payload.players;
   renderPlayers();
+}
+
+async function loadPersistentLogs() {
+  const server = selectedServer();
+  if (!server) {
+    return;
+  }
+  const payload = await api(`/api/servers/${server.id}/logs`);
+  state.logs = payload.entries || [];
+  elements.consoleLogSource.textContent = payload.file || server.logFile || "logs/latest.log";
+  renderLogs();
 }
 
 async function runPlayerAction(action, player = "") {
@@ -478,6 +491,9 @@ async function reloadActiveView() {
   if (view === "files") {
     await loadFiles();
   }
+  if (view === "console") {
+    await loadPersistentLogs();
+  }
   if (view === "properties") {
     await loadProperties();
   }
@@ -539,6 +555,9 @@ document.querySelectorAll(".nav-item").forEach((button) => {
         elements.ramStatus.textContent = error.message;
       });
     }
+    if (button.dataset.view === "console") {
+      loadPersistentLogs().catch(alert);
+    }
   });
 });
 
@@ -565,6 +584,7 @@ $("#refreshPlayersBtn").addEventListener("click", () => runPlayerAction("refresh
 $("#refreshFilesBtn").addEventListener("click", () => loadFiles().catch(alert));
 $("#reloadPropertiesBtn").addEventListener("click", () => loadProperties().catch(alert));
 $("#reloadRamBtn").addEventListener("click", () => loadRam().catch(alert));
+$("#reloadLogsBtn").addEventListener("click", () => loadPersistentLogs().catch(alert));
 $("#recommendedRamBtn").addEventListener("click", () => {
   const memory = state.ram?.memory || state.memory;
   if (!memory) {
