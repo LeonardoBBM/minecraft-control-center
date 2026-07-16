@@ -1,132 +1,229 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a0e0c">
+    <meta name="description" content="Panel local para administrar servidores de Minecraft.">
     <title>Minecraft Control Center</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
+    <a class="skip-link" href="#mainContent">Saltar al contenido</a>
+
     <div class="app">
       <aside class="sidebar">
         <div class="brand">
-          <span class="brand-mark">M</span>
-          <div>
+          <span class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+          </span>
+          <span class="brand-copy">
+            <small>Minecraft</small>
             <strong>Control Center</strong>
-            <small>Minecraft local</small>
+          </span>
+        </div>
+
+        <div class="nav-label">Administrar</div>
+        <nav aria-label="Secciones principales">
+          <button class="nav-item active" data-view="dashboard" aria-current="page" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+            <span>Resumen</span>
+          </button>
+          <button class="nav-item" data-view="console" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+            <span>Consola</span>
+          </button>
+          <button class="nav-item" data-view="files" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+            <span>Archivos</span>
+          </button>
+          <button class="nav-item" data-view="properties" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
+            <span>Propiedades</span>
+          </button>
+          <button class="nav-item" data-view="performance" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+            <span>Rendimiento</span>
+          </button>
+          <button class="nav-item" data-view="settings" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/></svg>
+            <span>Configuración</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span class="connection-dot" id="socketDot" aria-hidden="true"></span>
+          <div>
+            <strong>Panel local</strong>
+            <small id="socketStatus">Conectando…</small>
           </div>
         </div>
-        <nav>
-          <button class="nav-item active" data-view="dashboard">Panel</button>
-          <button class="nav-item" data-view="console">Consola</button>
-          <button class="nav-item" data-view="files">Archivos</button>
-          <button class="nav-item" data-view="properties">Propiedades</button>
-          <button class="nav-item" data-view="performance">RAM</button>
-          <button class="nav-item" data-view="settings">Configuracion</button>
-        </nav>
       </aside>
 
-      <main class="content">
+      <main class="content" id="mainContent" tabindex="-1">
         <header class="topbar">
-          <div>
+          <div class="server-heading">
+            <span class="eyebrow">Instancia activa</span>
             <h1 id="serverName">Servidor</h1>
-            <p id="serverPath">Cargando...</p>
+            <p class="server-path">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+              <span id="serverPath">Cargando…</span>
+            </p>
           </div>
           <div class="topbar-actions">
-            <select id="serverSelect" aria-label="Instancia"></select>
-            <button id="newInstanceBtn" type="button">Nueva instancia</button>
+            <label class="select-control">
+              <span class="sr-only">Seleccionar instancia</span>
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 7h.01M11 7h6M7 12h.01M11 12h6M7 17h.01M11 17h6"/></svg>
+              <select id="serverSelect" aria-label="Instancia"></select>
+              <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+            </label>
+            <button class="button secondary" id="newInstanceBtn" type="button">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>
+              Nueva instancia
+            </button>
             <div class="status-pill" id="statusPill">Desconectado</div>
           </div>
         </header>
 
         <section class="view active" id="dashboard">
-          <div class="metrics">
-            <article class="metric">
-              <span>Estado</span>
-              <strong id="metricStatus">--</strong>
-            </article>
-            <article class="metric">
-              <span>Puerto</span>
-              <strong id="metricPort">--</strong>
-            </article>
-            <article class="metric">
-              <span>RAM objetivo</span>
-              <strong id="metricRam">--</strong>
-            </article>
-            <article class="metric">
-              <span>PID</span>
-              <strong id="metricPid">--</strong>
-            </article>
-            <article class="metric">
-              <span>CPU real</span>
-              <strong id="metricCpu">--</strong>
-            </article>
-            <article class="metric">
-              <span>RAM real</span>
-              <strong id="metricMemory">--</strong>
-            </article>
-          </div>
-
-          <div class="actions">
-            <button class="primary" id="startBtn">Iniciar</button>
-            <button id="restartBtn">Reiniciar</button>
-            <button class="danger" id="stopBtn">Detener</button>
-            <button id="backupBtn">Backup</button>
-          </div>
-
-          <section class="panel">
-            <div class="panel-title">
-              <h2>Actividad reciente</h2>
-              <span id="logCount">0 lineas</span>
+          <div class="view-heading">
+            <div>
+              <span class="eyebrow">Estado general</span>
+              <h2>Resumen del servidor</h2>
             </div>
-            <div class="mini-log" id="miniLog"></div>
-          </section>
+            <p>Controla la instancia y revisa sus recursos en tiempo real.</p>
+          </div>
 
-          <section class="panel players-panel">
-            <div class="panel-title">
+          <section class="control-bar" aria-label="Controles del servidor">
+            <div class="control-copy">
+              <span class="control-icon" aria-hidden="true">
+                <svg class="icon" viewBox="0 0 24 24"><path d="M12 2v10M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>
+              </span>
               <div>
-                <h2>Jugadores conectados</h2>
-                <span id="playerCount">0 conectados</span>
+                <strong>Control rápido</strong>
+                <span>Las acciones se aplican a la instancia seleccionada.</span>
               </div>
-              <button id="refreshPlayersBtn">Actualizar</button>
             </div>
-            <div class="player-list" id="playerList"></div>
+            <div class="actions">
+              <button class="button primary" id="startBtn" type="button">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+                Iniciar
+              </button>
+              <button class="button" id="restartBtn" type="button">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.38 6.36L3 16M3 12A9 9 0 0 1 18.38 5.64L21 8"/><path d="M3 21v-5h5M21 3v5h-5"/></svg>
+                Reiniciar
+              </button>
+              <button class="button danger" id="stopBtn" type="button">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="5" y="5" rx="1"/></svg>
+                Detener
+              </button>
+              <button class="button" id="backupBtn" type="button">
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Backup
+              </button>
+            </div>
           </section>
+
+          <div class="metrics">
+            <article class="metric metric-status">
+              <span class="metric-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 12 2 2 4-4"/></svg></span>
+              <div><span>Estado</span><strong id="metricStatus">--</strong></div>
+            </article>
+            <article class="metric">
+              <span class="metric-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span>
+              <div><span>CPU real</span><strong id="metricCpu">--</strong></div>
+            </article>
+            <article class="metric">
+              <span class="metric-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19v-3M10 19v-6M14 19V9M18 19V5"/></svg></span>
+              <div><span>RAM real</span><strong id="metricMemory">--</strong></div>
+            </article>
+            <article class="metric">
+              <span class="metric-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="8" x="3" y="3" rx="2"/><rect width="18" height="8" x="3" y="13" rx="2"/><path d="M7 7h.01M7 17h.01"/></svg></span>
+              <div><span>RAM objetivo</span><strong id="metricRam">--</strong></div>
+            </article>
+            <article class="metric">
+              <span class="metric-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+              <div><span>Puerto</span><strong id="metricPort">--</strong></div>
+            </article>
+            <article class="metric">
+              <span class="metric-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M8 9h8M8 13h5"/></svg></span>
+              <div><span>PID</span><strong id="metricPid">--</strong></div>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel activity-panel">
+              <div class="panel-title">
+                <div>
+                  <span class="panel-kicker">Últimos eventos</span>
+                  <h2>Actividad reciente</h2>
+                </div>
+                <span class="count-badge" id="logCount">0 líneas</span>
+              </div>
+              <div class="mini-log" id="miniLog"></div>
+            </section>
+
+            <section class="panel players-panel">
+              <div class="panel-title">
+                <div>
+                  <span class="panel-kicker">Sesión actual</span>
+                  <h2>Jugadores</h2>
+                  <span id="playerCount">0 conectados</span>
+                </div>
+                <button class="button icon-button" id="refreshPlayersBtn" type="button" title="Actualizar jugadores" aria-label="Actualizar jugadores">
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.38 6.36L3 16M3 12A9 9 0 0 1 18.38 5.64L21 8"/><path d="M3 21v-5h5M21 3v5h-5"/></svg>
+                </button>
+              </div>
+              <div class="player-list" id="playerList"></div>
+            </section>
+          </div>
         </section>
 
         <section class="view" id="console">
+          <div class="view-heading">
+            <div><span class="eyebrow">Administración</span><h2>Consola en vivo</h2></div>
+            <p>Consulta los logs y ejecuta comandos sin salir del panel.</p>
+          </div>
           <section class="panel console-panel">
-            <div class="panel-title">
-              <div>
-                <h2>Consola en vivo</h2>
-                <span id="consoleLogSource">logs/latest.log</span>
+            <div class="panel-title terminal-title">
+              <div class="terminal-heading">
+                <span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <div><h2>Terminal</h2><span id="consoleLogSource">logs/latest.log</span></div>
               </div>
               <div class="panel-actions">
-                <button id="reloadLogsBtn" type="button">Recargar logs</button>
-                <button id="clearConsoleBtn" type="button">Limpiar vista</button>
+                <button class="button" id="reloadLogsBtn" type="button">Recargar</button>
+                <button class="button" id="clearConsoleBtn" type="button">Limpiar</button>
               </div>
             </div>
-            <div class="console" id="consoleLog"></div>
+            <div class="console" id="consoleLog" role="log" aria-live="polite"></div>
             <form class="command-row" id="commandForm">
               <div class="command-box">
-                <input id="commandInput" autocomplete="off" placeholder="Escribe un comando: say Hola, list, whitelist..." />
+                <span class="command-prompt" aria-hidden="true">›</span>
+                <input id="commandInput" type="text" autocomplete="off" aria-label="Comando de Minecraft" placeholder="Escribe un comando: say Hola, list, whitelist…">
                 <div class="suggestions" id="suggestions"></div>
               </div>
-              <button class="primary" type="submit">Enviar</button>
+              <button class="button primary" type="submit">
+                Enviar
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+              </button>
             </form>
           </section>
         </section>
 
         <section class="view" id="files">
+          <div class="view-heading">
+            <div><span class="eyebrow">Contenido</span><h2>Archivos del servidor</h2></div>
+            <p>Navega, edita y descarga archivos de la instancia.</p>
+          </div>
           <section class="panel">
             <div class="panel-title">
-              <div>
-                <h2>Archivos del servidor</h2>
-                <span id="filePathLabel">/</span>
+              <div class="path-heading">
+                <span class="folder-chip"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>
+                <div><h2>Explorador</h2><span id="filePathLabel">/</span></div>
               </div>
               <div class="panel-actions">
-                <button id="upFilesBtn" type="button">Subir</button>
-                <button id="refreshFilesBtn" type="button">Actualizar</button>
+                <button class="button" id="upFilesBtn" type="button">Subir nivel</button>
+                <button class="button" id="refreshFilesBtn" type="button">Actualizar</button>
               </div>
             </div>
             <div class="file-list" id="fileList"></div>
@@ -134,181 +231,125 @@
 
           <section class="panel file-editor-panel" id="fileEditorPanel" hidden>
             <div class="panel-title">
-              <div>
-                <h2 id="fileEditorTitle">Archivo</h2>
-                <span id="fileEditorStatus">Sin cambios</span>
-              </div>
+              <div><span class="panel-kicker">Editor de texto</span><h2 id="fileEditorTitle">Archivo</h2><span id="fileEditorStatus">Sin cambios</span></div>
               <div class="panel-actions">
-                <button id="downloadFileBtn" type="button">Descargar</button>
-                <button class="primary" id="saveFileBtn" type="button">Guardar</button>
+                <button class="button" id="downloadFileBtn" type="button">Descargar</button>
+                <button class="button primary" id="saveFileBtn" type="button">Guardar cambios</button>
               </div>
             </div>
-            <textarea class="file-editor" id="fileEditorContent" spellcheck="false"></textarea>
+            <textarea class="file-editor" id="fileEditorContent" spellcheck="false" aria-label="Contenido del archivo"></textarea>
           </section>
         </section>
 
         <section class="view" id="properties">
+          <div class="view-heading">
+            <div><span class="eyebrow">Mundo y acceso</span><h2>Propiedades</h2></div>
+            <p>Edita los ajustes comunes de <code>server.properties</code>.</p>
+          </div>
           <section class="panel">
             <div class="panel-title">
-              <div>
-                <h2>server.properties</h2>
-                <span id="propertiesStatus">Sin cargar</span>
-              </div>
+              <div><span class="panel-kicker">Configuración principal</span><h2>server.properties</h2><span id="propertiesStatus">Sin cargar</span></div>
               <div class="panel-actions">
-                <button id="reloadPropertiesBtn">Recargar</button>
-                <button class="primary" id="savePropertiesBtn" type="submit" form="propertiesForm">Guardar</button>
+                <button class="button" id="reloadPropertiesBtn" type="button">Recargar</button>
+                <button class="button primary" id="savePropertiesBtn" type="submit" form="propertiesForm">Guardar cambios</button>
               </div>
             </div>
             <form class="properties-grid" id="propertiesForm"></form>
-            <p class="hint">La mayoria de cambios necesita reiniciar el servidor para aplicarse.</p>
+            <p class="hint"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg> La mayoría de los cambios necesita reiniciar el servidor para aplicarse.</p>
           </section>
         </section>
 
         <section class="view" id="performance">
+          <div class="view-heading">
+            <div><span class="eyebrow">Recursos</span><h2>RAM y rendimiento</h2></div>
+            <p>Ajusta la memoria asignada sin comprometer la estabilidad del sistema.</p>
+          </div>
           <section class="panel">
             <div class="panel-title">
-              <div>
-                <h2>RAM / Rendimiento</h2>
-                <span id="ramStatus">Sin cargar</span>
-              </div>
+              <div><span class="panel-kicker">Asignación de memoria</span><h2>Memoria Java</h2><span id="ramStatus">Sin cargar</span></div>
               <div class="panel-actions">
-                <button id="reloadRamBtn">Recargar</button>
-                <button id="recommendedRamBtn" type="button">Usar recomendado</button>
-                <button class="primary" id="saveRamBtn" type="submit" form="ramForm">Guardar</button>
+                <button class="button" id="reloadRamBtn" type="button">Recargar</button>
+                <button class="button" id="recommendedRamBtn" type="button">Usar recomendado</button>
+                <button class="button primary" id="saveRamBtn" type="submit" form="ramForm">Guardar</button>
               </div>
             </div>
 
             <div class="ram-summary">
-              <article>
-                <span>Laptop</span>
-                <strong id="ramSystem">--</strong>
-              </article>
-              <article>
-                <span>Servidor actual</span>
-                <strong id="ramCurrent">--</strong>
-              </article>
-              <article>
-                <span>Recomendado</span>
-                <strong id="ramRecommended">--</strong>
-              </article>
+              <article><span>Sistema</span><strong id="ramSystem">--</strong><small>Memoria física disponible</small></article>
+              <article><span>Servidor actual</span><strong id="ramCurrent">--</strong><small>Mínima / máxima</small></article>
+              <article class="recommended"><span>Recomendado</span><strong id="ramRecommended">--</strong><small>Equilibrio sugerido</small></article>
             </div>
 
-            <form class="ram-form" id="ramForm">
-              <label>
-                RAM minima (GB)
-                <input id="minRamInput" type="number" min="1" step="1" />
-              </label>
-              <label>
-                RAM maxima (GB)
-                <input id="maxRamInput" type="number" min="1" step="1" />
-              </label>
+            <form class="ram-form form-surface" id="ramForm">
+              <label>RAM mínima <span class="input-unit"><input id="minRamInput" type="number" min="1" step="1"><small>GB</small></span></label>
+              <label>RAM máxima <span class="input-unit"><input id="maxRamInput" type="number" min="1" step="1"><small>GB</small></span></label>
             </form>
-            <p class="hint">El panel limita el maximo a <span id="ramLimit">--</span> para dejar memoria libre al sistema. Reinicia el servidor para aplicar cambios.</p>
+            <p class="hint"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg> El panel limita el máximo a <strong id="ramLimit">--</strong> para dejar memoria libre al sistema. Reinicia para aplicar los cambios.</p>
           </section>
         </section>
 
         <section class="view" id="settings">
-          <section class="panel settings-grid">
-            <label>
-              Nombre
-              <input id="settingName" readonly />
-            </label>
-            <label>
-              Carpeta
-              <input id="settingPath" readonly />
-            </label>
-            <label>
-              Comando
-              <input id="settingCommand" readonly />
-            </label>
-            <label>
-              Notas
-              <textarea id="settingNotes" readonly></textarea>
-            </label>
-            <label>
-              Backup cron
-              <input id="settingBackupSchedule" placeholder="0 4 * * *" />
-            </label>
-            <label>
-              Webhook de notificaciones
-              <input id="settingNotifyWebhookUrl" placeholder="https://example.com/webhook" />
-            </label>
-            <label class="settings-checkbox">
-              <input id="settingAutoRestart" type="checkbox" />
-              Auto-restart
-            </label>
-            <div class="settings-actions">
-              <span id="automationStatus">Automatizacion sin cambios</span>
-              <button class="primary" id="saveAutomationBtn" type="button">Guardar automatizacion</button>
+          <div class="view-heading">
+            <div><span class="eyebrow">Instancia</span><h2>Configuración</h2></div>
+            <p>Revisa la identidad del servidor y configura su automatización.</p>
+          </div>
+          <section class="panel">
+            <div class="panel-title">
+              <div><span class="panel-kicker">Detalles y automatización</span><h2>Ajustes de la instancia</h2></div>
+              <span id="automationStatus">Sin cambios</span>
             </div>
+            <div class="settings-grid">
+              <label>Nombre<input id="settingName" type="text" readonly></label>
+              <label>Carpeta<input id="settingPath" type="text" readonly></label>
+              <label class="wide">Comando<input id="settingCommand" type="text" readonly></label>
+              <label class="wide">Notas<textarea id="settingNotes" readonly></textarea></label>
+            </div>
+            <div class="settings-divider"><span>Automatización</span></div>
+            <div class="automation-grid">
+              <label>Backup programado<small>Formato cron de cinco campos</small><input id="settingBackupSchedule" type="text" placeholder="0 4 * * *"></label>
+              <label>Webhook de notificaciones<small>Recibe eventos importantes por HTTP</small><input id="settingNotifyWebhookUrl" type="url" placeholder="https://example.com/webhook"></label>
+              <label class="toggle-row">
+                <span><strong>Reinicio automático</strong><small>Intenta recuperar el servidor después de una caída.</small></span>
+                <input id="settingAutoRestart" type="checkbox">
+              </label>
+            </div>
+            <div class="settings-actions"><span>Los cambios se guardan solo para esta instancia.</span><button class="button primary" id="saveAutomationBtn" type="button">Guardar automatización</button></div>
           </section>
         </section>
       </main>
     </div>
 
-    <dialog class="modal" id="newInstanceDialog">
+    <dialog class="modal" id="newInstanceDialog" aria-labelledby="newInstanceTitle">
       <form class="modal-panel" id="newInstanceForm" method="dialog">
-        <div class="panel-title">
-          <div>
-            <h2>Nueva instancia</h2>
-            <span id="newInstanceStatus">Registra una carpeta de server pack existente.</span>
-          </div>
-          <button id="closeNewInstanceBtn" type="button">Cerrar</button>
+        <div class="modal-header">
+          <div><span class="eyebrow">Agregar servidor</span><h2 id="newInstanceTitle">Nueva instancia</h2><p id="newInstanceStatus">Registra una carpeta de server pack existente.</p></div>
+          <button class="button icon-button" id="closeNewInstanceBtn" type="button" aria-label="Cerrar">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
         </div>
 
         <div class="instance-form-grid">
-          <label>
-            Nombre
-            <input name="name" required placeholder="Prominence II - Pruebas" />
-          </label>
-          <label>
-            ID opcional
-            <input name="id" placeholder="prominence-pruebas" />
-          </label>
-          <label class="wide">
-            Carpeta del modpack
-            <input name="path" required placeholder="/home/leonardo/ruta/al/server-pack" />
-          </label>
-          <label>
-            Comando
-            <input name="command" value="bash start.sh" required />
-          </label>
-          <label>
-            Puerto
-            <input name="port" type="number" min="1" max="65535" value="25566" required />
-          </label>
-          <label>
-            RAM minima
-            <input name="minRam" placeholder="4G" />
-          </label>
-          <label>
-            RAM maxima
-            <input name="maxRam" placeholder="8G" />
-          </label>
-          <label class="wide">
-            Notas
-            <textarea name="notes" placeholder="Modpack, version o detalles importantes"></textarea>
-          </label>
-          <label>
-            Backup cron
-            <input name="backupSchedule" placeholder="0 4 * * *" />
-          </label>
-          <label class="wide">
-            Webhook de notificaciones
-            <input name="notifyWebhookUrl" placeholder="https://example.com/webhook" />
-          </label>
-          <label class="instance-checkbox">
-            <input name="autoRestart" type="checkbox" value="true" />
-            Auto-restart
-          </label>
+          <label>Nombre<input name="name" type="text" required placeholder="Prominence II - Pruebas"></label>
+          <label>ID opcional<input name="id" type="text" placeholder="prominence-pruebas"></label>
+          <label class="wide">Carpeta del modpack<input name="path" type="text" required placeholder="/home/usuario/servidores/prominence"></label>
+          <label>Comando<input name="command" type="text" value="bash start.sh" required></label>
+          <label>Puerto<input name="port" type="number" min="1" max="65535" value="25566" required></label>
+          <label>RAM mínima<input name="minRam" type="text" placeholder="4G"></label>
+          <label>RAM máxima<input name="maxRam" type="text" placeholder="8G"></label>
+          <label class="wide">Notas<textarea name="notes" placeholder="Modpack, versión o detalles importantes"></textarea></label>
+          <label>Backup programado<input name="backupSchedule" type="text" placeholder="0 4 * * *"></label>
+          <label class="wide">Webhook de notificaciones<input name="notifyWebhookUrl" type="url" placeholder="https://example.com/webhook"></label>
+          <label class="toggle-row wide"><span><strong>Reinicio automático</strong><small>Recupera la instancia cuando detecta una caída.</small></span><input name="autoRestart" type="checkbox" value="true"></label>
         </div>
 
         <div class="modal-actions">
-          <button type="button" id="cancelNewInstanceBtn">Cancelar</button>
-          <button class="primary" type="submit">Agregar instancia</button>
+          <button class="button" type="button" id="cancelNewInstanceBtn">Cancelar</button>
+          <button class="button primary" type="submit">Agregar instancia</button>
         </div>
       </form>
     </dialog>
+
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
     <script src="/app.js" type="module"></script>
   </body>
 </html>
