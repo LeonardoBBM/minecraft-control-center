@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { connect } from "node:net";
 import { createReadStream, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { cp, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
@@ -24,6 +25,8 @@ const CLOCK_TICKS_PER_SECOND = Number(spawnSync("getconf", ["CLK_TCK"], { encodi
 const RESTART_WINDOW_MS = 5 * 60 * 1000;
 const RESTART_DELAY_MS = 10 * 1000;
 const MAX_RESTARTS_IN_WINDOW = 3;
+const RCON_TIMEOUT_MS = 3000;
+const RCON_DEFAULT_HOST = "127.0.0.1";
 const PROPERTY_FIELDS = [
   { key: "motd", label: "Mensaje del servidor", type: "text", description: "Texto que aparece en la lista de servidores." },
   { key: "difficulty", label: "Dificultad", type: "select", options: ["peaceful", "easy", "normal", "hard"] },
@@ -63,6 +66,7 @@ const runningBackups = new Set();
 const lastBackupRuns = new Map();
 const usageSamples = new Map();
 const importJobs = new Map();
+let rconRequestId = 1;
 
 function loadConfig() {
   return JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
@@ -1533,7 +1537,7 @@ function updatePlayersFromLog(serverId, line) {
   }
 }
 
-function playerAction(server, action, playerName) {
+async function playerAction(server, action, playerName) {
   const name = cleanPlayerName(playerName);
   if (!name && action !== "refresh") {
     throw new Error("Nombre de jugador invalido.");
@@ -1553,7 +1557,7 @@ function playerAction(server, action, playerName) {
     throw new Error("Accion de jugador no soportada.");
   }
 
-  sendCommand(server, command);
+  await sendCommand(server, command);
   if (action === "kick" || action === "ban") {
     markPlayer(server.id, name, false);
     broadcastPlayers(server.id);
@@ -1601,22 +1605,33 @@ function startServer(server) {
   return { ok: true, pid: info?.pid || null, session };
 }
 
-function sendCommand(server, command) {
+async function sendCommand(server, command) {
   if (!isScreenRunning(server)) {
     throw new Error("El servidor no esta corriendo en screen.");
   }
-  runScreen(["-S", screenSessionName(server), "-X", "stuff", `${command}\n`]);
+
+  let result = "";
+  if (rconSettings(server).available) {
+    result = await sendRconCommand(server, command);
+  } else {
+    runScreen(["-S", screenSessionName(server), "-X", "stuff", `${command}\n`]);
+  }
+
   appendLog(server.id, `> ${command}`, "command");
-  return { ok: true };
+  return { ok: true, result };
 }
 
-function stopServer(server, options = {}) {
+async function stopServer(server, options = {}) {
   if (!isScreenRunning(server)) {
     return { ok: true, alreadyStopped: true };
   }
 
   manualStops.add(server.id);
-  runScreen(["-S", screenSessionName(server), "-X", "stuff", "stop\n"]);
+  if (rconSettings(server).available) {
+    await sendRconCommand(server, "stop");
+  } else {
+    runScreen(["-S", screenSessionName(server), "-X", "stuff", "stop\n"]);
+  }
   appendLog(server.id, "> stop", "command");
   setTimeout(() => {
     if (isScreenRunning(server)) {
@@ -1766,6 +1781,137 @@ function parseProperties(raw) {
     return { type: "property", key, value, raw: line };
   });
   return { lines, values };
+}
+
+function readRawServerProperties(server) {
+  const file = propertiesFile(server);
+  if (!existsSync(file)) {
+    return null;
+  }
+
+  return parseProperties(readFileSync(file, "utf8")).values;
+}
+
+function rconSettings(server) {
+  const properties = readRawServerProperties(server) || {};
+  const password = String(server.rconPassword || properties["rcon.password"] || "").trim();
+  const enabled = String(properties["enable-rcon"] || "").trim().toLowerCase() === "true";
+  const port = Number(server.rconPort || properties["rcon.port"] || 25575);
+  const host = String(server.rconHost || RCON_DEFAULT_HOST).trim() || RCON_DEFAULT_HOST;
+
+  return {
+    enabled,
+    host,
+    port,
+    password,
+    available: enabled && password && Number.isInteger(port) && port > 0 && port <= 65535
+  };
+}
+
+function encodeRconPacket(id, type, payload = "") {
+  const bodyLength = Buffer.byteLength(payload) + 10;
+  const packet = Buffer.alloc(bodyLength + 4);
+
+  packet.writeInt32LE(bodyLength, 0);
+  packet.writeInt32LE(id, 4);
+  packet.writeInt32LE(type, 8);
+  packet.write(payload, 12, "utf8");
+
+  return packet;
+}
+
+function readRconPacket(socket, timeoutMs = RCON_TIMEOUT_MS) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    let buffer = Buffer.alloc(0);
+    const timeout = setTimeout(() => {
+      cleanup();
+      rejectPromise(new Error("Tiempo agotado esperando respuesta RCON."));
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      socket.off("data", onData);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+    };
+
+    const onError = (error) => {
+      cleanup();
+      rejectPromise(error);
+    };
+
+    const onClose = () => {
+      cleanup();
+      rejectPromise(new Error("Conexion RCON cerrada antes de responder."));
+    };
+
+    const onData = (chunk) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      if (buffer.length < 4) {
+        return;
+      }
+
+      const length = buffer.readInt32LE(0);
+      if (buffer.length < length + 4) {
+        return;
+      }
+
+      cleanup();
+      resolvePromise({
+        id: buffer.readInt32LE(4),
+        type: buffer.readInt32LE(8),
+        payload: buffer.subarray(12, 4 + length - 2).toString("utf8")
+      });
+    };
+
+    socket.on("data", onData);
+    socket.on("error", onError);
+    socket.on("close", onClose);
+  });
+}
+
+async function sendRconCommand(server, command) {
+  const settings = rconSettings(server);
+  if (!settings.available) {
+    throw new Error("RCON no esta configurado para esta instancia.");
+  }
+
+  const socket = connect({
+    host: settings.host,
+    port: settings.port
+  });
+
+  try {
+    await new Promise((resolvePromise, rejectPromise) => {
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        rejectPromise(new Error("Tiempo agotado conectando a RCON."));
+      }, RCON_TIMEOUT_MS);
+
+      socket.once("connect", () => {
+        clearTimeout(timeout);
+        resolvePromise();
+      });
+      socket.once("error", (error) => {
+        clearTimeout(timeout);
+        rejectPromise(error);
+      });
+    });
+
+    const authId = rconRequestId++;
+    socket.write(encodeRconPacket(authId, 3, settings.password));
+    const auth = await readRconPacket(socket);
+    if (auth.id === -1) {
+      throw new Error("Autenticacion RCON rechazada.");
+    }
+
+    const commandId = rconRequestId++;
+    socket.write(encodeRconPacket(commandId, 2, command));
+    const response = await readRconPacket(socket);
+    return response.payload;
+  } finally {
+    socket.end();
+  }
 }
 
 function readServerProperties(server) {
@@ -2041,13 +2187,13 @@ async function handleApi(request, response) {
       return;
     }
     if (request.method === "POST" && action === "stop") {
-      sendJson(response, 200, stopServer(server));
+      sendJson(response, 200, await stopServer(server));
       return;
     }
     if (request.method === "POST" && action === "restart") {
       if (isScreenRunning(server)) {
         manualStops.add(server.id);
-        stopServer(server, { keepManualStop: true });
+        await stopServer(server, { keepManualStop: true });
         setTimeout(() => {
           manualStops.delete(server.id);
           startServer(server);
@@ -2060,7 +2206,7 @@ async function handleApi(request, response) {
     }
     if (request.method === "POST" && action === "command") {
       const body = await readBody(request);
-      sendJson(response, 200, sendCommand(server, body.command));
+      sendJson(response, 200, await sendCommand(server, body.command));
       return;
     }
     if (request.method === "POST" && action === "backup") {
@@ -2094,7 +2240,7 @@ async function handleApi(request, response) {
     }
     if (request.method === "POST" && action === "player-action") {
       const body = await readBody(request);
-      sendJson(response, 200, playerAction(server, body.action, body.player));
+      sendJson(response, 200, await playerAction(server, body.action, body.player));
       return;
     }
     if (request.method === "GET" && action === "properties") {
