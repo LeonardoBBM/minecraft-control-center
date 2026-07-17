@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { createReadStream, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { cp, readdir, stat } from "node:fs/promises";
 import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { freemem, totalmem } from "node:os";
 import { WebSocketServer } from "ws";
 import { COMMANDS, completeCommand } from "./minecraftCommands.js";
@@ -19,6 +19,7 @@ const DEFAULT_IMPORT_BROWSER_DIR = existsSync(join(HOME_DIR, "Descargas"))
   : HOME_DIR;
 const PORT = Number(process.env.PORT || 4545);
 const PAGE_SIZE = 4096;
+const IS_IMPORT_WORKER = process.argv[2] === "--import-worker";
 const CLOCK_TICKS_PER_SECOND = Number(spawnSync("getconf", ["CLK_TCK"], { encoding: "utf8" }).stdout || 100);
 const RESTART_WINDOW_MS = 5 * 60 * 1000;
 const RESTART_DELAY_MS = 10 * 1000;
@@ -61,6 +62,7 @@ const restartAttempts = new Map();
 const runningBackups = new Set();
 const lastBackupRuns = new Map();
 const usageSamples = new Map();
+const importJobs = new Map();
 
 function loadConfig() {
   return JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
@@ -444,13 +446,16 @@ function moveClientOnlyMods(modsDir) {
     }
 
     const source = join(modsDir, file);
-    const metadata = spawnSync("unzip", ["-p", source, "META-INF/neoforge.mods.toml", "META-INF/mods.toml"], {
+    const metadata = spawnSync("unzip", ["-p", source, "META-INF/neoforge.mods.toml", "META-INF/mods.toml", "fabric.mod.json"], {
       encoding: "utf8",
       maxBuffer: 1024 * 1024
     }).stdout || "";
     const isClientOnly = [...clientOnlyIds].some((id) =>
       new RegExp(`modId\\s*=\\s*"${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(metadata)
-    );
+    ) ||
+      /displayTest\s*=\s*"IGNORE_SERVER_VERSION"/i.test(metadata) ||
+      /side\s*=\s*"CLIENT"/i.test(metadata) ||
+      /"environment"\s*:\s*"client"/i.test(metadata);
 
     if (isClientOnly) {
       mkdirSync(disabledDir, { recursive: true });
@@ -462,7 +467,7 @@ function moveClientOnlyMods(modsDir) {
   return moved;
 }
 
-function convertCurseForgeExport(sourcePath, config, body, extractedPath = "") {
+function convertCurseForgeExport(sourcePath, config, body, extractedPath = "", progress = () => {}) {
   const exportRoot = extractedPath || sourcePath;
   const manifest = readJsonIfExists(join(exportRoot, "manifest.json"));
   if (manifest?.manifestType !== "minecraftModpack") {
@@ -488,9 +493,16 @@ function convertCurseForgeExport(sourcePath, config, body, extractedPath = "") {
     }
   }
 
+  progress({ stage: "loader", message: `Instalando ${summary.modLoader || "loader"}...`, current: 0, total: 1 });
   installNeoForge(targetPath, summary.modLoader);
+  progress({ stage: "loader", message: "Loader instalado.", current: 1, total: 1 });
 
-  for (const file of manifest.files || []) {
+  const files = manifest.files || [];
+  let processed = 0;
+
+  progress({ stage: "mods", message: "Descargando mods...", current: processed, total: files.length });
+
+  for (const file of files) {
     try {
       const info = curseForgeDownloadInfo(file.projectID, file.fileID);
       const nameFromUrl = fileNameFromUrl(info.effectiveUrl, `${file.fileID}.jar`);
@@ -505,10 +517,20 @@ function convertCurseForgeExport(sourcePath, config, body, extractedPath = "") {
       downloaded.push(basename(target));
     } catch (error) {
       failed.push({ ...file, error: error.message });
+    } finally {
+      processed += 1;
+      progress({
+        stage: "mods",
+        message: `Procesando mods: ${processed}/${files.length}`,
+        current: processed,
+        total: files.length
+      });
     }
   }
 
+  progress({ stage: "client-mods", message: "Apartando mods client-only...", current: 0, total: 1 });
   const disabledClientMods = moveClientOnlyMods(modsDir);
+  progress({ stage: "client-mods", message: "Mods client-only revisados.", current: 1, total: 1 });
   const minRam = normalizeRamLabel(body?.minRam) || "6G";
   const maxRam = normalizeRamLabel(body?.maxRam) || "12G";
   writeFileSync(join(targetPath, "eula.txt"), "# Accepted by Minecraft Control Center conversion\neula=true\n");
@@ -650,7 +672,8 @@ function rootAfterExtraction(targetPath) {
   return targetPath;
 }
 
-function importServerPack(config, body) {
+function importServerPack(config, body, progress = () => {}) {
+  progress({ stage: "inspect", message: "Revisando pack seleccionado...", current: 0, total: 1 });
   const sourcePath = resolve(String(body?.sourcePath || "").trim());
   if (!sourcePath || !existsSync(sourcePath)) {
     throw new Error("La ruta del pack no existe.");
@@ -673,10 +696,12 @@ function importServerPack(config, body) {
 
     const curseForge = inspectZipForCurseForge(sourcePath);
     if (curseForge) {
+      progress({ stage: "extract", message: "Descomprimiendo export de CurseForge...", current: 0, total: 1 });
       const exportPath = uniqueServerPath(`${name}-export`);
       mkdirSync(exportPath, { recursive: true });
       extractZip(sourcePath, exportPath);
-      const converted = convertCurseForgeExport(sourcePath, config, body, rootAfterExtraction(exportPath));
+      progress({ stage: "extract", message: "Export descomprimido.", current: 1, total: 1 });
+      const converted = convertCurseForgeExport(sourcePath, config, body, rootAfterExtraction(exportPath), progress);
       serverPath = converted.path;
       name = converted.name;
       body = {
@@ -690,10 +715,12 @@ function importServerPack(config, body) {
       notes.push(`Convertido desde zip CurseForge: ${sourcePath}`);
       notes.push(`Reporte: ${join(converted.path, "conversion-report.json")}`);
     } else {
+      progress({ stage: "extract", message: "Descomprimiendo server pack...", current: 0, total: 1 });
       serverPath = uniqueServerPath(name);
       mkdirSync(serverPath, { recursive: true });
       extractZip(sourcePath, serverPath);
       serverPath = rootAfterExtraction(serverPath);
+      progress({ stage: "extract", message: "Server pack descomprimido.", current: 1, total: 1 });
       notes.push(`Importado desde zip: ${sourcePath}`);
     }
   } else if (!sourceStat.isDirectory()) {
@@ -701,7 +728,7 @@ function importServerPack(config, body) {
   }
 
   if (sourceStat.isDirectory() && curseForgeManifestInfo(serverPath)) {
-    const converted = convertCurseForgeExport(sourcePath, config, body);
+    const converted = convertCurseForgeExport(sourcePath, config, body, "", progress);
     serverPath = converted.path;
     name = converted.name;
     body = {
@@ -716,6 +743,7 @@ function importServerPack(config, body) {
     notes.push(`Reporte: ${join(converted.path, "conversion-report.json")}`);
   }
 
+  progress({ stage: "detect", message: "Detectando comando de arranque...", current: 0, total: 1 });
   const detected = detectRunnableServerPack(serverPath, {
     minRam: body?.minRam,
     maxRam: body?.maxRam
@@ -738,11 +766,13 @@ function importServerPack(config, body) {
       .join("\n")
   });
 
+  progress({ stage: "register", message: "Generando defaults y registrando instancia...", current: 0, total: 1 });
   ensureServerDefaults(server.path, server);
   config.servers.push(server);
   saveConfig(config);
   startLogWatcher(server);
   reconcileScreenStates();
+  progress({ stage: "register", message: "Instancia registrada.", current: 1, total: 1 });
 
   return {
     ok: true,
@@ -750,6 +780,179 @@ function importServerPack(config, body) {
     detected: detected.detected,
     notes
   };
+}
+
+function readStdinJson() {
+  return new Promise((resolvePromise, rejectPromise) => {
+    let raw = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => {
+      raw += chunk;
+    });
+    process.stdin.on("end", () => {
+      try {
+        resolvePromise(raw ? JSON.parse(raw) : {});
+      } catch (error) {
+        rejectPromise(error);
+      }
+    });
+    process.stdin.on("error", rejectPromise);
+  });
+}
+
+function writeWorkerMessage(message) {
+  process.stdout.write(`${JSON.stringify(message)}\n`);
+}
+
+async function runImportWorker() {
+  const body = await readStdinJson();
+  const config = loadConfig();
+  const result = importServerPack(config, body, (progress) => {
+    writeWorkerMessage({ type: "progress", progress });
+  });
+  writeWorkerMessage({ type: "done", result });
+}
+
+function createImportJob(body) {
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const job = {
+    id,
+    status: "running",
+    message: "Iniciando importacion...",
+    stage: "starting",
+    current: 0,
+    total: 1,
+    percent: 0,
+    result: null,
+    error: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    process: null
+  };
+
+  const child = spawn(process.execPath, [new URL(import.meta.url).pathname, "--import-worker"], {
+    cwd: ROOT,
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+  job.process = child;
+  importJobs.set(id, job);
+
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    stdoutBuffer += chunk;
+    const lines = stdoutBuffer.split(/\r?\n/);
+    stdoutBuffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.trim()) {
+        continue;
+      }
+
+      try {
+        const message = JSON.parse(line);
+        if (message.type === "progress") {
+          updateImportJobProgress(job, message.progress);
+        }
+        if (message.type === "done") {
+          job.status = "complete";
+          job.result = message.result;
+          job.message = "Importacion completada.";
+          job.stage = "complete";
+          job.current = 1;
+          job.total = 1;
+          job.percent = 100;
+          job.updatedAt = new Date().toISOString();
+        }
+        if (message.type === "error") {
+          job.status = "failed";
+          job.error = message.error || "La importacion fallo.";
+          job.message = job.error;
+          job.updatedAt = new Date().toISOString();
+        }
+      } catch {
+        stderrBuffer += `${line}\n`;
+      }
+    }
+  });
+
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (chunk) => {
+    stderrBuffer += chunk;
+  });
+
+  child.on("close", (code, signal) => {
+    job.process = null;
+    if (job.status === "complete" || job.status === "cancelled" || job.status === "failed") {
+      return;
+    }
+
+    job.status = "failed";
+    job.error = signal === "SIGTERM"
+      ? "Importacion cancelada."
+      : (stderrBuffer.trim() || `La importacion fallo con codigo ${code}.`);
+    job.message = job.error;
+    job.updatedAt = new Date().toISOString();
+  });
+
+  child.stdin.end(JSON.stringify(body));
+  return serializeImportJob(job);
+}
+
+function updateImportJobProgress(job, progress = {}) {
+  const total = Number(progress.total || 1);
+  const current = Number(progress.current || 0);
+
+  job.stage = progress.stage || job.stage;
+  job.message = progress.message || job.message;
+  job.current = current;
+  job.total = total;
+  job.percent = total > 0 ? Math.max(0, Math.min(100, Math.round((current / total) * 100))) : 0;
+  job.updatedAt = new Date().toISOString();
+}
+
+function serializeImportJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    stage: job.stage,
+    message: job.message,
+    current: job.current,
+    total: job.total,
+    percent: job.percent,
+    result: job.result,
+    error: job.error,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt
+  };
+}
+
+function findImportJob(id) {
+  const job = importJobs.get(id);
+  if (!job) {
+    throw new Error("Trabajo de importacion no encontrado.");
+  }
+  return job;
+}
+
+function cancelImportJob(id) {
+  const job = findImportJob(id);
+  if (job.status !== "running") {
+    return serializeImportJob(job);
+  }
+
+  job.status = "cancelled";
+  job.message = "Importacion cancelada.";
+  job.error = "Importacion cancelada.";
+  job.updatedAt = new Date().toISOString();
+
+  if (job.process) {
+    job.process.kill("SIGTERM");
+  }
+
+  return serializeImportJob(job);
 }
 
 function shellQuote(value) {
@@ -1766,13 +1969,25 @@ async function handleApi(request, response) {
 
   if (request.method === "POST" && url.pathname === "/api/import-server") {
     const body = await readBody(request);
-    sendJson(response, 201, importServerPack(config, body));
+    sendJson(response, 202, { job: createImportJob(body) });
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/import-browser") {
     sendJson(response, 200, importBrowserSummary(url.searchParams.get("path") || ""));
     return;
+  }
+
+  if (segments[0] === "api" && segments[1] === "import-jobs" && segments[2]) {
+    if (request.method === "GET" && !segments[3]) {
+      sendJson(response, 200, { job: serializeImportJob(findImportJob(segments[2])) });
+      return;
+    }
+
+    if (request.method === "POST" && segments[3] === "cancel") {
+      sendJson(response, 200, { job: cancelImportJob(segments[2]) });
+      return;
+    }
   }
 
   if (segments[0] === "api" && segments[1] === "servers" && segments[2]) {
@@ -1890,10 +2105,17 @@ wss.on("connection", (socket) => {
   socket.on("close", () => clients.delete(socket));
 });
 
-startAllLogWatchers();
-startScreenMonitor();
-startBackupScheduler();
+if (IS_IMPORT_WORKER) {
+  runImportWorker().catch((error) => {
+    writeWorkerMessage({ type: "error", error: error.message });
+    process.exitCode = 1;
+  });
+} else {
+  startAllLogWatchers();
+  startScreenMonitor();
+  startBackupScheduler();
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`Minecraft Control Center running at http://127.0.0.1:${PORT}`);
-});
+  server.listen(PORT, "127.0.0.1", () => {
+    console.log(`Minecraft Control Center running at http://127.0.0.1:${PORT}`);
+  });
+}

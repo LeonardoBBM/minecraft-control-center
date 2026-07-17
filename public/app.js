@@ -12,7 +12,9 @@ const state = {
     filePath: "",
     currentFile: null,
     suggestionIndex: -1,
-    automationDirty: false
+    automationDirty: false,
+    importJobId: null,
+    importPollTimer: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -34,9 +36,11 @@ const elements = {
     useCurrentImportFolderBtn: $("#useCurrentImportFolderBtn"),
     importBrowserList: $("#importBrowserList"),
     importInstanceBtn: $("#importInstanceBtn"),
+    cancelImportBtn: $("#cancelImportBtn"),
     importProgress: $("#importProgress"),
     importProgressTitle: $("#importProgressTitle"),
     importProgressDetail: $("#importProgressDetail"),
+    importProgressBar: $("#importProgressBar"),
     metricStatus: $("#metricStatus"),
     metricPort: $("#metricPort"),
     metricRam: $("#metricRam"),
@@ -1042,6 +1046,7 @@ function openNewInstanceDialog() {
     elements.importBrowserList.innerHTML = "";
     elements.importBrowserPath.textContent = "/";
     elements.importBrowserUpBtn.disabled = true;
+    elements.cancelImportBtn.hidden = true;
     hideImportProgress();
 
     if (
@@ -1113,13 +1118,21 @@ async function importInstance() {
     elements.importInstanceBtn.setAttribute("aria-busy", "true");
     elements.importInstanceBtn.disabled = true;
     elements.newInstanceStatus.textContent = "Importando pack...";
-    const progressTimer = showImportProgress();
+    showImportProgress();
 
     try {
         const payload = await api("/api/import-server", {
             method: "POST",
             body
         });
+
+        if (payload.job) {
+            state.importJobId = payload.job.id;
+            elements.cancelImportBtn.hidden = false;
+            updateImportProgress(payload.job);
+            await waitForImportJob(payload.job.id);
+            return;
+        }
 
         if (payload.server) {
             upsertServer(payload.server);
@@ -1134,32 +1147,33 @@ async function importInstance() {
 
         notify("Pack importado como instancia.");
     } finally {
-        clearInterval(progressTimer);
-        hideImportProgress();
-        elements.importInstanceBtn.removeAttribute("aria-busy");
-        elements.importInstanceBtn.disabled = false;
+        if (!state.importJobId) {
+            finishImportProgress();
+        }
     }
 }
 
 function showImportProgress() {
-    const steps = [
-        "Revisando el pack seleccionado...",
-        "Preparando carpeta de servidor...",
-        "Instalando loader si hace falta...",
-        "Descargando mods y copiando configuraciones...",
-        "Generando archivos de arranque...",
-        "Registrando la instancia en el panel..."
-    ];
-    let index = 0;
-
     elements.importProgress.hidden = false;
     elements.importProgressTitle.textContent = "Importando pack";
-    elements.importProgressDetail.textContent = steps[index];
+    elements.importProgressDetail.textContent =
+        "Iniciando trabajo de importación...";
+    elements.importProgressBar.style.width = "4%";
+}
 
-    return setInterval(() => {
-        index = Math.min(index + 1, steps.length - 1);
-        elements.importProgressDetail.textContent = steps[index];
-    }, 4500);
+function updateImportProgress(job) {
+    const percent = Math.max(4, Number(job.percent || 0));
+
+    elements.importProgress.hidden = false;
+    elements.importProgressTitle.textContent =
+        job.status === "complete"
+            ? "Importación completada"
+            : "Importando pack";
+    elements.importProgressDetail.textContent =
+        job.message || "Trabajando...";
+    elements.importProgressBar.style.width = `${Math.min(100, percent)}%`;
+    elements.newInstanceStatus.textContent =
+        job.message || "Importando pack...";
 }
 
 function hideImportProgress() {
@@ -1167,6 +1181,88 @@ function hideImportProgress() {
     elements.importProgressTitle.textContent = "Preparando importación";
     elements.importProgressDetail.textContent =
         "Esto puede tardar varios minutos en packs grandes.";
+    elements.importProgressBar.style.width = "0%";
+}
+
+function finishImportProgress() {
+    state.importJobId = null;
+    elements.cancelImportBtn.hidden = true;
+    elements.importInstanceBtn.removeAttribute("aria-busy");
+    elements.importInstanceBtn.disabled = false;
+    hideImportProgress();
+}
+
+async function waitForImportJob(jobId) {
+    return new Promise((resolve, reject) => {
+        const poll = async () => {
+            try {
+                const payload = await api(`/api/import-jobs/${jobId}`);
+                const job = payload.job;
+
+                updateImportProgress(job);
+
+                if (job.status === "running") {
+                    return;
+                }
+
+                clearInterval(state.importPollTimer);
+                state.importPollTimer = null;
+
+                if (job.status === "complete") {
+                    if (job.result?.server) {
+                        upsertServer(job.result.server);
+                        state.selected = job.result.server.id;
+                    }
+
+                    clearServerScopedState();
+                    render();
+                    closeNewInstanceDialog();
+
+                    await refresh();
+
+                    notify("Pack importado como instancia.");
+                    finishImportProgress();
+                    resolve(job);
+                    return;
+                }
+
+                finishImportProgress();
+                reject(new Error(job.error || "La importación no terminó correctamente."));
+            } catch (error) {
+                clearInterval(state.importPollTimer);
+                state.importPollTimer = null;
+                finishImportProgress();
+                reject(error);
+            }
+        };
+
+        state.importPollTimer = setInterval(poll, 1200);
+        poll();
+    });
+}
+
+async function cancelImport() {
+    if (!state.importJobId) {
+        return;
+    }
+
+    elements.cancelImportBtn.disabled = true;
+
+    try {
+        const payload = await api(`/api/import-jobs/${state.importJobId}/cancel`, {
+            method: "POST"
+        });
+
+        updateImportProgress(payload.job);
+        notify("Importación cancelada.");
+    } finally {
+        if (state.importPollTimer) {
+            clearInterval(state.importPollTimer);
+            state.importPollTimer = null;
+        }
+        elements.cancelImportBtn.disabled = false;
+        finishImportProgress();
+    }
 }
 
 async function loadImportBrowser(path = "") {
@@ -1503,6 +1599,18 @@ elements.importInstanceBtn.addEventListener(
     "click",
     () => {
         importInstance().catch((error) => {
+            elements.newInstanceStatus.textContent =
+                error.message;
+
+            reportError(error);
+        });
+    }
+);
+
+elements.cancelImportBtn.addEventListener(
+    "click",
+    () => {
+        cancelImport().catch((error) => {
             elements.newInstanceStatus.textContent =
                 error.message;
 

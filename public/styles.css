@@ -1597,9 +1597,14 @@ textarea::placeholder {
   font-size: 10px;
 }
 
-#importInstanceBtn {
+#importInstanceBtn,
+#cancelImportBtn {
   grid-column: 1 / -1;
   justify-self: end;
+}
+
+#cancelImportBtn[hidden] {
+  display: none;
 }
 
 .import-browser {
@@ -1716,16 +1721,12 @@ textarea::placeholder {
 .progress-track span {
   position: absolute;
   inset-block: 0;
-  left: -42%;
-  width: 42%;
+  left: 0;
+  width: 0%;
   border-radius: inherit;
   background: var(--accent);
   box-shadow: 0 0 20px rgb(115 218 145 / 30%);
-  animation: progress-slide 1300ms ease-in-out infinite;
-}
-
-@keyframes progress-slide {
-  to { left: 100%; }
+  transition: width 240ms ease;
 }
 
 .instance-form-grid {
@@ -2079,11 +2080,13 @@ textarea::placeholder {
   .modal-actions .button,
   .import-browser-toolbar .button,
   #browseImportSourceBtn,
-  #importInstanceBtn {
+  #importInstanceBtn,
+  #cancelImportBtn {
     width: 100%;
   }
 
-  #importInstanceBtn {
+  #importInstanceBtn,
+  #cancelImportBtn {
     justify-self: stretch;
   }
 
