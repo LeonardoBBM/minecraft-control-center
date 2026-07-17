@@ -432,6 +432,7 @@ function installNeoForge(targetPath, loaderId) {
 function moveClientOnlyMods(modsDir) {
   const clientOnlyIds = new Set([
     "armor_hud",
+    "drippyloadingscreen",
     "entity_model_features",
     "entity_texture_features",
     "immersiveoverlays",
@@ -452,10 +453,7 @@ function moveClientOnlyMods(modsDir) {
     }).stdout || "";
     const isClientOnly = [...clientOnlyIds].some((id) =>
       new RegExp(`modId\\s*=\\s*"${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(metadata)
-    ) ||
-      /displayTest\s*=\s*"IGNORE_SERVER_VERSION"/i.test(metadata) ||
-      /side\s*=\s*"CLIENT"/i.test(metadata) ||
-      /"environment"\s*:\s*"client"/i.test(metadata);
+    );
 
     if (isClientOnly) {
       mkdirSync(disabledDir, { recursive: true });

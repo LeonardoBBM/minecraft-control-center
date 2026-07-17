@@ -27,6 +27,20 @@
       "backupSchedule": "",
       "notifyWebhookUrl": "",
       "notes": "Convertido desde CurseForge export KEO RPG optimized 6.0.0.\nDetectado: script:start.sh"
+    },
+    {
+      "id": "atm10-to-the-sky",
+      "name": "ATM10 To the Sky",
+      "path": "/home/leonardo/.openclaw/workspace/minecraft-control-center/servers/atm10-to-the-sky-server",
+      "command": "bash start.sh",
+      "port": 25567,
+      "java": "system",
+      "minRam": "6G",
+      "maxRam": "12G",
+      "autoRestart": false,
+      "backupSchedule": "",
+      "notifyWebhookUrl": "",
+      "notes": "Convertido desde CurseForge export ATM10 To the Sky 2.0.2\nMods descargados: 319\nZips/recursos saltados: 5\nDescargas fallidas: 0\nMods client-only desactivados: drippyloadingscreen_neoforge_3.1.0_MC_1.21.1.jar\nConvertido desde zip CurseForge: /home/leonardo/Descargas/atm.zip\nReporte: /home/leonardo/.openclaw/workspace/minecraft-control-center/servers/atm10-to-the-sky-server/conversion-report.json\nDetectado: script:start.sh"
     }
   ]
 }
