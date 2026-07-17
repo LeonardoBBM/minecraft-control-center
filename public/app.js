@@ -27,6 +27,12 @@ const elements = {
     newInstanceForm: $("#newInstanceForm"),
     newInstanceStatus: $("#newInstanceStatus"),
     importSourcePath: $("#importSourcePath"),
+    browseImportSourceBtn: $("#browseImportSourceBtn"),
+    importBrowserPanel: $("#importBrowserPanel"),
+    importBrowserPath: $("#importBrowserPath"),
+    importBrowserUpBtn: $("#importBrowserUpBtn"),
+    useCurrentImportFolderBtn: $("#useCurrentImportFolderBtn"),
+    importBrowserList: $("#importBrowserList"),
     importInstanceBtn: $("#importInstanceBtn"),
     metricStatus: $("#metricStatus"),
     metricPort: $("#metricPort"),
@@ -1029,6 +1035,10 @@ function openNewInstanceDialog() {
         nextAvailablePort();
 
     elements.importSourcePath.value = "";
+    elements.importBrowserPanel.hidden = true;
+    elements.importBrowserList.innerHTML = "";
+    elements.importBrowserPath.textContent = "/";
+    elements.importBrowserUpBtn.disabled = true;
 
     if (
         typeof elements.newInstanceDialog.showModal === "function"
@@ -1093,7 +1103,7 @@ async function importInstance() {
     body.sourcePath = elements.importSourcePath.value.trim();
 
     if (!body.sourcePath) {
-        throw new Error("Pega la ruta de una carpeta o archivo .zip.");
+        throw new Error("Elige una carpeta o archivo .zip para importar.");
     }
 
     elements.importInstanceBtn.setAttribute("aria-busy", "true");
@@ -1122,6 +1132,60 @@ async function importInstance() {
         elements.importInstanceBtn.removeAttribute("aria-busy");
         elements.importInstanceBtn.disabled = false;
     }
+}
+
+async function loadImportBrowser(path = "") {
+    elements.importBrowserPanel.hidden = false;
+    elements.importBrowserList.innerHTML = `
+        <div class="import-browser-empty">Cargando...</div>
+    `;
+
+    const query = path ? `?path=${encodeURIComponent(path)}` : "";
+    const payload = await api(`/api/import-browser${query}`);
+
+    elements.importBrowserPath.textContent = payload.path;
+    elements.importBrowserUpBtn.disabled = !payload.parent;
+    elements.importBrowserUpBtn.dataset.path = payload.parent || "";
+    elements.useCurrentImportFolderBtn.dataset.path = payload.path;
+
+    elements.importBrowserList.innerHTML = payload.entries.length
+        ? payload.entries
+            .map(
+                (entry) => `
+                    <button
+                        class="import-browser-item"
+                        type="button"
+                        data-path="${escapeHtml(entry.path)}"
+                        data-directory="${entry.directory}"
+                    >
+                        <span class="file-name">
+                            ${entry.directory
+                                ? `
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                                `
+                                : `
+                                    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                `
+                            }
+                            <span>${escapeHtml(entry.name)}</span>
+                        </span>
+                        <span class="file-meta">
+                            ${entry.directory
+                                ? "Carpeta"
+                                : `${Math.round(entry.size / 1024)} KB`
+                            }
+                        </span>
+                    </button>
+                `
+            )
+            .join("")
+        : `<div class="import-browser-empty">No hay carpetas ni archivos .zip aqui.</div>`;
+}
+
+function useImportSourcePath(path) {
+    elements.importSourcePath.value = path;
+    elements.newInstanceStatus.textContent =
+        "Ruta seleccionada. Puedes importar el pack.";
 }
 
 async function reloadActiveView() {
@@ -1409,6 +1473,59 @@ elements.importInstanceBtn.addEventListener(
 
             reportError(error);
         });
+    }
+);
+
+elements.browseImportSourceBtn.addEventListener(
+    "click",
+    () => {
+        const currentPath = elements.importSourcePath.value.trim();
+
+        loadImportBrowser(currentPath).catch((error) => {
+            elements.newInstanceStatus.textContent =
+                error.message;
+
+            reportError(error);
+        });
+    }
+);
+
+elements.importBrowserUpBtn.addEventListener(
+    "click",
+    () => {
+        loadImportBrowser(elements.importBrowserUpBtn.dataset.path || "")
+            .catch(reportError);
+    }
+);
+
+elements.useCurrentImportFolderBtn.addEventListener(
+    "click",
+    () => {
+        const path = elements.useCurrentImportFolderBtn.dataset.path;
+
+        if (path) {
+            useImportSourcePath(path);
+        }
+    }
+);
+
+elements.importBrowserList.addEventListener(
+    "click",
+    (event) => {
+        const item = event.target.closest("[data-path]");
+
+        if (!item) {
+            return;
+        }
+
+        const path = item.dataset.path;
+
+        if (item.dataset.directory === "true") {
+            loadImportBrowser(path).catch(reportError);
+            return;
+        }
+
+        useImportSourcePath(path);
     }
 );
 

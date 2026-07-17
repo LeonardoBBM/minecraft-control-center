@@ -13,6 +13,10 @@ const DATA_DIR = join(ROOT, "data");
 const SERVERS_DIR = join(ROOT, "servers");
 const CONFIG_FILE = join(DATA_DIR, "servers.json");
 const BACKUP_DIR = join(DATA_DIR, "backups");
+const HOME_DIR = resolve(process.env.HOME || "/home/leonardo");
+const DEFAULT_IMPORT_BROWSER_DIR = existsSync(join(HOME_DIR, "Descargas"))
+  ? join(HOME_DIR, "Descargas")
+  : HOME_DIR;
 const PORT = Number(process.env.PORT || 4545);
 const PAGE_SIZE = 4096;
 const CLOCK_TICKS_PER_SECOND = Number(spawnSync("getconf", ["CLK_TCK"], { encoding: "utf8" }).stdout || 100);
@@ -238,6 +242,64 @@ function nextAvailablePort(config, preferred = 25566) {
   }
 
   return port;
+}
+
+function resolveImportBrowserPath(requestedPath = "") {
+  let target = requestedPath
+    ? resolve(String(requestedPath))
+    : DEFAULT_IMPORT_BROWSER_DIR;
+
+  if (target !== HOME_DIR && !target.startsWith(`${HOME_DIR}${sep}`)) {
+    throw new Error("El explorador de importacion solo puede navegar dentro de tu carpeta personal.");
+  }
+
+  if (existsSync(target) && statSync(target).isFile()) {
+    target = dirname(target);
+  }
+
+  if (!existsSync(target) || !statSync(target).isDirectory()) {
+    throw new Error("La ruta del explorador no existe o no es una carpeta.");
+  }
+
+  return target;
+}
+
+function importBrowserSummary(requestedPath = "") {
+  const target = resolveImportBrowserPath(requestedPath);
+  const entries = [];
+
+  for (const entry of readdirSync(target)) {
+    const fullPath = join(target, entry);
+    let entryStat;
+
+    try {
+      entryStat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+
+    const directory = entryStat.isDirectory();
+    const zip = entryStat.isFile() && extname(entry).toLowerCase() === ".zip";
+
+    if (!directory && !zip) {
+      continue;
+    }
+
+    entries.push({
+      name: entry,
+      path: fullPath,
+      directory,
+      size: entryStat.size
+    });
+  }
+
+  entries.sort((left, right) => Number(right.directory) - Number(left.directory) || left.name.localeCompare(right.name));
+
+  const parent = target === HOME_DIR
+    ? null
+    : dirname(target);
+
+  return { path: target, parent, entries };
 }
 
 function readJsonIfExists(file) {
@@ -1705,6 +1767,11 @@ async function handleApi(request, response) {
   if (request.method === "POST" && url.pathname === "/api/import-server") {
     const body = await readBody(request);
     sendJson(response, 201, importServerPack(config, body));
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/import-browser") {
+    sendJson(response, 200, importBrowserSummary(url.searchParams.get("path") || ""));
     return;
   }
 

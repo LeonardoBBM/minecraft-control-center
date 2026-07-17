@@ -332,9 +332,23 @@
           <div>
             <span class="panel-kicker">Importación automática</span>
             <h3>Server pack o ZIP local</h3>
-            <p>Pega una carpeta ejecutable o un archivo .zip de server pack. El panel lo prepara y registra la instancia.</p>
+            <p>Elige una carpeta ejecutable o un archivo .zip de server pack. El panel lo prepara y registra la instancia.</p>
           </div>
-          <label class="wide">Ruta del pack<input id="importSourcePath" type="text" placeholder="/home/usuario/Descargas/server-pack.zip"></label>
+          <label>Ruta del pack<input id="importSourcePath" type="text" placeholder="/home/usuario/Descargas/server-pack.zip"></label>
+          <button class="button" id="browseImportSourceBtn" type="button">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+            Explorar
+          </button>
+          <div class="import-browser" id="importBrowserPanel" hidden>
+            <div class="import-browser-toolbar">
+              <span id="importBrowserPath">/</span>
+              <div>
+                <button class="button" id="importBrowserUpBtn" type="button">Subir nivel</button>
+                <button class="button" id="useCurrentImportFolderBtn" type="button">Usar carpeta</button>
+              </div>
+            </div>
+            <div class="import-browser-list" id="importBrowserList"></div>
+          </div>
           <button class="button" id="importInstanceBtn" type="button">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Importar pack

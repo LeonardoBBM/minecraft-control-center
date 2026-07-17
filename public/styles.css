@@ -1597,6 +1597,83 @@ textarea::placeholder {
   font-size: 10px;
 }
 
+#importInstanceBtn {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+.import-browser {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  overflow: hidden;
+}
+
+.import-browser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 10px;
+}
+
+.import-browser-toolbar > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-browser-toolbar > div {
+  display: flex;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.import-browser-list {
+  display: grid;
+  gap: 5px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.import-browser-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-soft);
+  padding: 8px 10px;
+  font-size: 11px;
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.import-browser-item:hover {
+  border-color: var(--line);
+  background: var(--surface-hover);
+}
+
+.import-browser-empty {
+  display: grid;
+  place-items: center;
+  min-height: 72px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
 .instance-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1938,14 +2015,27 @@ textarea::placeholder {
   }
 
   .settings-actions,
-  .modal-actions {
+  .modal-actions,
+  .import-browser-toolbar {
     align-items: stretch;
     flex-direction: column;
   }
 
   .settings-actions .button,
-  .modal-actions .button {
+  .modal-actions .button,
+  .import-browser-toolbar .button,
+  #browseImportSourceBtn,
+  #importInstanceBtn {
     width: 100%;
+  }
+
+  #importInstanceBtn {
+    justify-self: stretch;
+  }
+
+  .import-browser-toolbar > div {
+    width: 100%;
+    flex-direction: column;
   }
 
   .modal-panel {
