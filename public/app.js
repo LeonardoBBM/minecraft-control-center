@@ -34,6 +34,9 @@ const elements = {
     useCurrentImportFolderBtn: $("#useCurrentImportFolderBtn"),
     importBrowserList: $("#importBrowserList"),
     importInstanceBtn: $("#importInstanceBtn"),
+    importProgress: $("#importProgress"),
+    importProgressTitle: $("#importProgressTitle"),
+    importProgressDetail: $("#importProgressDetail"),
     metricStatus: $("#metricStatus"),
     metricPort: $("#metricPort"),
     metricRam: $("#metricRam"),
@@ -1039,6 +1042,7 @@ function openNewInstanceDialog() {
     elements.importBrowserList.innerHTML = "";
     elements.importBrowserPath.textContent = "/";
     elements.importBrowserUpBtn.disabled = true;
+    hideImportProgress();
 
     if (
         typeof elements.newInstanceDialog.showModal === "function"
@@ -1109,6 +1113,7 @@ async function importInstance() {
     elements.importInstanceBtn.setAttribute("aria-busy", "true");
     elements.importInstanceBtn.disabled = true;
     elements.newInstanceStatus.textContent = "Importando pack...";
+    const progressTimer = showImportProgress();
 
     try {
         const payload = await api("/api/import-server", {
@@ -1129,9 +1134,39 @@ async function importInstance() {
 
         notify("Pack importado como instancia.");
     } finally {
+        clearInterval(progressTimer);
+        hideImportProgress();
         elements.importInstanceBtn.removeAttribute("aria-busy");
         elements.importInstanceBtn.disabled = false;
     }
+}
+
+function showImportProgress() {
+    const steps = [
+        "Revisando el pack seleccionado...",
+        "Preparando carpeta de servidor...",
+        "Instalando loader si hace falta...",
+        "Descargando mods y copiando configuraciones...",
+        "Generando archivos de arranque...",
+        "Registrando la instancia en el panel..."
+    ];
+    let index = 0;
+
+    elements.importProgress.hidden = false;
+    elements.importProgressTitle.textContent = "Importando pack";
+    elements.importProgressDetail.textContent = steps[index];
+
+    return setInterval(() => {
+        index = Math.min(index + 1, steps.length - 1);
+        elements.importProgressDetail.textContent = steps[index];
+    }, 4500);
+}
+
+function hideImportProgress() {
+    elements.importProgress.hidden = true;
+    elements.importProgressTitle.textContent = "Preparando importación";
+    elements.importProgressDetail.textContent =
+        "Esto puede tardar varios minutos en packs grandes.";
 }
 
 async function loadImportBrowser(path = "") {

@@ -1674,6 +1674,60 @@ textarea::placeholder {
   text-align: center;
 }
 
+.import-progress {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgb(8 11 9 / 48%);
+  padding: 12px;
+}
+
+.import-progress[hidden] {
+  display: none;
+}
+
+.import-progress strong,
+.import-progress span {
+  display: block;
+}
+
+.import-progress strong {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.import-progress span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.progress-track span {
+  position: absolute;
+  inset-block: 0;
+  left: -42%;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--accent);
+  box-shadow: 0 0 20px rgb(115 218 145 / 30%);
+  animation: progress-slide 1300ms ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  to { left: 100%; }
+}
+
 .instance-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
