@@ -77,6 +77,7 @@ const elements = {
     settingNotifyWebhookUrl: $("#settingNotifyWebhookUrl"),
     settingAutoRestart: $("#settingAutoRestart"),
     automationStatus: $("#automationStatus"),
+    deleteInstanceBtn: $("#deleteInstanceBtn"),
     startBtn: $("#startBtn"),
     restartBtn: $("#restartBtn"),
     stopBtn: $("#stopBtn"),
@@ -196,6 +197,7 @@ function render() {
         elements.restartBtn.disabled = true;
         elements.stopBtn.disabled = true;
         elements.backupBtn.disabled = true;
+        elements.deleteInstanceBtn.disabled = true;
         renderServerSelect();
         return;
     }
@@ -254,6 +256,7 @@ function render() {
     elements.restartBtn.disabled = false;
     elements.stopBtn.disabled = !server.running;
     elements.backupBtn.disabled = false;
+    elements.deleteInstanceBtn.disabled = server.running;
 
     if (!state.automationDirty) {
         elements.settingBackupSchedule.value =
@@ -1029,6 +1032,44 @@ async function saveAutomation() {
     notify("Automatización guardada.");
 }
 
+async function deleteSelectedInstance() {
+    const server = selectedServer();
+
+    if (!server) {
+        return;
+    }
+
+    if (server.running) {
+        throw new Error("Deten la instancia antes de quitarla del panel.");
+    }
+
+    const confirmation = prompt(
+        `Para quitar "${server.name}" del panel, escribe su id: ${server.id}`
+    );
+
+    if (confirmation !== server.id) {
+        return;
+    }
+
+    elements.automationStatus.textContent = "Quitando instancia...";
+    elements.deleteInstanceBtn.disabled = true;
+
+    await api(`/api/servers/${server.id}`, {
+        method: "DELETE"
+    });
+
+    state.servers = state.servers.filter(
+        (item) => item.id !== server.id
+    );
+    state.selected = state.servers[0]?.id || null;
+    clearServerScopedState();
+    render();
+
+    await refresh();
+
+    notify("Instancia quitada del panel. Los archivos no se borraron.");
+}
+
 function openNewInstanceDialog() {
     elements.newInstanceStatus.textContent =
         "Registra una carpeta de server pack existente.";
@@ -1743,6 +1784,18 @@ $("#saveAutomationBtn").addEventListener(
     "click",
     () => {
         saveAutomation().catch((error) => {
+            elements.automationStatus.textContent =
+                error.message;
+
+            reportError(error);
+        });
+    }
+);
+
+elements.deleteInstanceBtn.addEventListener(
+    "click",
+    () => {
+        deleteSelectedInstance().catch((error) => {
             elements.automationStatus.textContent =
                 error.message;
 

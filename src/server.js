@@ -83,6 +83,26 @@ function saveServerRecord(serverId, updates) {
   return config.servers[index];
 }
 
+function deleteServerRecord(serverId) {
+  const config = loadConfig();
+  const index = config.servers.findIndex((server) => server.id === serverId);
+  if (index === -1) {
+    throw new Error("Servidor no encontrado.");
+  }
+
+  const [server] = config.servers.splice(index, 1);
+  saveConfig(config);
+  stopLogWatcher(server.id);
+  logBuffers.delete(server.id);
+  playerState.delete(server.id);
+  screenStates.delete(server.id);
+  usageSamples.delete(server.id);
+  scheduledRestarts.delete(server.id);
+  restartAttempts.delete(server.id);
+  manualStops.delete(server.id);
+  return server;
+}
+
 function normalizeBoolean(value) {
   return value === true || value === "true" || value === "on" || value === 1 || value === "1";
 }
@@ -1230,6 +1250,16 @@ function startLogWatcher(server, options = {}) {
   logWatchers.set(server.id, watcher);
 }
 
+function stopLogWatcher(serverId) {
+  const watcher = logWatchers.get(serverId);
+  if (!watcher) {
+    return;
+  }
+
+  clearInterval(watcher.timer);
+  logWatchers.delete(serverId);
+}
+
 function startAllLogWatchers() {
   for (const server of loadConfig().servers) {
     startLogWatcher(server);
@@ -1992,6 +2022,16 @@ async function handleApi(request, response) {
     const server = findServer(segments[2]);
     if (!server) {
       sendJson(response, 404, { error: "Servidor no encontrado." });
+      return;
+    }
+
+    if (request.method === "DELETE" && !segments[3]) {
+      if (isScreenRunning(server)) {
+        sendJson(response, 409, { error: "Deten la instancia antes de quitarla del panel." });
+        return;
+      }
+
+      sendJson(response, 200, { ok: true, server: publicServer(deleteServerRecord(server.id)) });
       return;
     }
 

@@ -1518,6 +1518,38 @@ textarea::placeholder {
   font-size: 10px;
 }
 
+.danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid rgb(241 123 125 / 24%);
+  border-radius: 12px;
+  background: var(--danger-soft);
+  padding: 13px;
+}
+
+.danger-zone div {
+  min-width: 0;
+}
+
+.danger-zone strong,
+.danger-zone span {
+  display: block;
+}
+
+.danger-zone strong {
+  color: #ffabad;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.danger-zone span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
 .modal {
   width: min(780px, calc(100vw - 28px));
   max-height: min(850px, calc(100vh - 28px));
@@ -2070,6 +2102,7 @@ textarea::placeholder {
   }
 
   .settings-actions,
+  .danger-zone,
   .modal-actions,
   .import-browser-toolbar {
     align-items: stretch;
@@ -2077,6 +2110,7 @@ textarea::placeholder {
   }
 
   .settings-actions .button,
+  .danger-zone .button,
   .modal-actions .button,
   .import-browser-toolbar .button,
   #browseImportSourceBtn,
