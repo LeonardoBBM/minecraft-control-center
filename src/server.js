@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
-import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { createReadStream, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { cp, readdir, stat } from "node:fs/promises";
-import { basename, extname, join, normalize, relative, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { freemem, totalmem } from "node:os";
 import { WebSocketServer } from "ws";
@@ -267,6 +267,16 @@ function curseForgeManifestInfo(folder) {
   };
 }
 
+function curseForgeManifestSummary(manifest) {
+  return {
+    name: manifest.name || "",
+    version: manifest.version || "",
+    minecraftVersion: manifest.minecraft?.version || "",
+    modLoader: manifest.minecraft?.modLoaders?.find((loader) => loader.primary)?.id || "",
+    files: Array.isArray(manifest.files) ? manifest.files.length : 0
+  };
+}
+
 function inspectZipForCurseForge(sourcePath) {
   const result = spawnSync("unzip", ["-p", sourcePath, "manifest.json"], {
     encoding: "utf8",
@@ -282,16 +292,201 @@ function inspectZipForCurseForge(sourcePath) {
     if (manifest.manifestType !== "minecraftModpack") {
       return null;
     }
-    return {
-      name: manifest.name || "",
-      version: manifest.version || "",
-      minecraftVersion: manifest.minecraft?.version || "",
-      modLoader: manifest.minecraft?.modLoaders?.find((loader) => loader.primary)?.id || "",
-      files: Array.isArray(manifest.files) ? manifest.files.length : 0
-    };
+    return curseForgeManifestSummary(manifest);
   } catch {
     return null;
   }
+}
+
+function downloadFile(url, target) {
+  const result = spawnSync("curl", ["-L", "-f", "--retry", "2", "-o", target, url], { encoding: "utf8" });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || `No se pudo descargar ${url}`).trim());
+  }
+}
+
+function curseForgeDownloadInfo(projectID, fileID) {
+  const url = `https://www.curseforge.com/api/v1/mods/${projectID}/files/${fileID}/download`;
+  const result = spawnSync("curl", [
+    "-L",
+    "-sS",
+    "-I",
+    "-o",
+    "/dev/null",
+    "-w",
+    "%{url_effective}\n%{content_type}",
+    url
+  ], { encoding: "utf8" });
+
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "No se pudo resolver la descarga de CurseForge.").trim());
+  }
+
+  const [effectiveUrl = "", contentType = ""] = result.stdout.trim().split(/\r?\n/);
+  return { url, effectiveUrl, contentType };
+}
+
+function fileNameFromUrl(url, fallback) {
+  try {
+    const parsed = new URL(url);
+    const name = decodeURIComponent(basename(parsed.pathname));
+    return name || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function installNeoForge(targetPath, loaderId) {
+  if (!loaderId.startsWith("neoforge-")) {
+    throw new Error(`Convertidor no soportado todavia para modloader: ${loaderId || "desconocido"}`);
+  }
+
+  const version = loaderId.replace(/^neoforge-/, "");
+  const installer = join(targetPath, `neoforge-${version}-installer.jar`);
+  const url = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${version}/neoforge-${version}-installer.jar`;
+  downloadFile(url, installer);
+
+  const result = spawnSync("java", ["-jar", installer, "--installServer"], {
+    cwd: targetPath,
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || "No se pudo instalar NeoForge.").trim());
+  }
+}
+
+function moveClientOnlyMods(modsDir) {
+  const clientOnlyIds = new Set([
+    "armor_hud",
+    "entity_model_features",
+    "entity_texture_features",
+    "immersiveoverlays",
+    "weatherrefind"
+  ]);
+  const disabledDir = join(dirname(modsDir), "mods-disabled", "client");
+  const moved = [];
+
+  for (const file of readdirSync(modsDir)) {
+    if (!file.toLowerCase().endsWith(".jar")) {
+      continue;
+    }
+
+    const source = join(modsDir, file);
+    const metadata = spawnSync("unzip", ["-p", source, "META-INF/neoforge.mods.toml", "META-INF/mods.toml"], {
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024
+    }).stdout || "";
+    const isClientOnly = [...clientOnlyIds].some((id) =>
+      new RegExp(`modId\\s*=\\s*"${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(metadata)
+    );
+
+    if (isClientOnly) {
+      mkdirSync(disabledDir, { recursive: true });
+      renameSync(source, join(disabledDir, file));
+      moved.push(file);
+    }
+  }
+
+  return moved;
+}
+
+function convertCurseForgeExport(sourcePath, config, body, extractedPath = "") {
+  const exportRoot = extractedPath || sourcePath;
+  const manifest = readJsonIfExists(join(exportRoot, "manifest.json"));
+  if (manifest?.manifestType !== "minecraftModpack") {
+    throw new Error("No encontre manifest.json de CurseForge para convertir.");
+  }
+
+  const summary = curseForgeManifestSummary(manifest);
+  const name = String(body?.name || "").trim() || summary.name || basename(sourcePath).replace(/\.zip$/i, "");
+  const targetPath = uniqueServerPath(`${name}-server`);
+  const modsDir = join(targetPath, "mods");
+  const skipped = [];
+  const failed = [];
+  const downloaded = [];
+
+  mkdirSync(targetPath, { recursive: true });
+  mkdirSync(modsDir, { recursive: true });
+
+  const overridesRoot = join(exportRoot, manifest.overrides || "overrides");
+  for (const folder of ["config", "defaultconfigs", "kubejs"]) {
+    const source = join(overridesRoot, folder);
+    if (existsSync(source)) {
+      cpSync(source, join(targetPath, folder), { recursive: true });
+    }
+  }
+
+  installNeoForge(targetPath, summary.modLoader);
+
+  for (const file of manifest.files || []) {
+    try {
+      const info = curseForgeDownloadInfo(file.projectID, file.fileID);
+      const nameFromUrl = fileNameFromUrl(info.effectiveUrl, `${file.fileID}.jar`);
+      const isJar = nameFromUrl.toLowerCase().endsWith(".jar") || /java-archive|jar/i.test(info.contentType);
+      if (!isJar) {
+        skipped.push({ ...file, name: nameFromUrl, reason: "not-jar" });
+        continue;
+      }
+
+      const target = join(modsDir, nameFromUrl.toLowerCase().endsWith(".jar") ? nameFromUrl : `${file.fileID}.jar`);
+      downloadFile(info.url, target);
+      downloaded.push(basename(target));
+    } catch (error) {
+      failed.push({ ...file, error: error.message });
+    }
+  }
+
+  const disabledClientMods = moveClientOnlyMods(modsDir);
+  const minRam = normalizeRamLabel(body?.minRam) || "6G";
+  const maxRam = normalizeRamLabel(body?.maxRam) || "12G";
+  writeFileSync(join(targetPath, "eula.txt"), "# Accepted by Minecraft Control Center conversion\neula=true\n");
+  writeFileSync(join(targetPath, "variables.txt"), `JAVA_ARGS="-Xmx${maxRam} -Xms${minRam}"\n`);
+  writeFileSync(join(targetPath, "start.sh"), [
+    "#!/usr/bin/env bash",
+    "set -euo pipefail",
+    "cd \"$(dirname \"$0\")\"",
+    "source ./variables.txt",
+    "exec ./run.sh nogui",
+    ""
+  ].join("\n"));
+  spawnSync("chmod", ["+x", join(targetPath, "start.sh")]);
+
+  const report = {
+    source: sourcePath,
+    minecraft: summary.minecraftVersion,
+    loader: summary.modLoader,
+    downloaded: downloaded.length,
+    skipped: skipped.length,
+    failed,
+    skippedFiles: skipped,
+    disabledClientMods
+  };
+  writeFileSync(join(targetPath, "conversion-report.json"), JSON.stringify(report, null, 2));
+
+  return {
+    path: targetPath,
+    name,
+    minRam,
+    maxRam,
+    notes: [
+      `Convertido desde CurseForge export ${summary.name || name} ${summary.version || ""}`.trim(),
+      `Mods descargados: ${downloaded.length}`,
+      `Zips/recursos saltados: ${skipped.length}`,
+      `Descargas fallidas: ${failed.length}`,
+      disabledClientMods.length ? `Mods client-only desactivados: ${disabledClientMods.join(", ")}` : ""
+    ].filter(Boolean).join("\n"),
+    report
+  };
 }
 
 function findStartScript(folder) {
@@ -400,7 +595,11 @@ function importServerPack(config, body) {
   }
 
   const sourceStat = statSync(sourcePath);
-  const name = String(body?.name || "").trim() || basename(sourcePath).replace(/\.zip$/i, "");
+  let name = String(body?.name || "").trim() || basename(sourcePath).replace(/\.zip$/i, "");
+  const requestedId = slugifyServerId(body?.id || name);
+  if (requestedId && config.servers.some((server) => server.id === requestedId)) {
+    throw new Error("Ya existe un servidor con ese id.");
+  }
   const port = nextAvailablePort(config, body?.port || 25566);
   let serverPath = sourcePath;
   const notes = [];
@@ -412,18 +611,47 @@ function importServerPack(config, body) {
 
     const curseForge = inspectZipForCurseForge(sourcePath);
     if (curseForge) {
-      throw new Error(
-        `Ese zip es un export de CurseForge (${curseForge.name || "sin nombre"} ${curseForge.version || ""}) con ${curseForge.files} mods. El importador de server packs ya lo detecta, pero la conversion automatica de CurseForge va en la siguiente etapa.`
-      );
+      const exportPath = uniqueServerPath(`${name}-export`);
+      mkdirSync(exportPath, { recursive: true });
+      extractZip(sourcePath, exportPath);
+      const converted = convertCurseForgeExport(sourcePath, config, body, rootAfterExtraction(exportPath));
+      serverPath = converted.path;
+      name = converted.name;
+      body = {
+        ...body,
+        name: converted.name,
+        path: converted.path,
+        minRam: converted.minRam,
+        maxRam: converted.maxRam,
+        notes: [String(body?.notes || "").trim(), converted.notes].filter(Boolean).join("\n")
+      };
+      notes.push(`Convertido desde zip CurseForge: ${sourcePath}`);
+      notes.push(`Reporte: ${join(converted.path, "conversion-report.json")}`);
+    } else {
+      serverPath = uniqueServerPath(name);
+      mkdirSync(serverPath, { recursive: true });
+      extractZip(sourcePath, serverPath);
+      serverPath = rootAfterExtraction(serverPath);
+      notes.push(`Importado desde zip: ${sourcePath}`);
     }
-
-    serverPath = uniqueServerPath(name);
-    mkdirSync(serverPath, { recursive: true });
-    extractZip(sourcePath, serverPath);
-    serverPath = rootAfterExtraction(serverPath);
-    notes.push(`Importado desde zip: ${sourcePath}`);
   } else if (!sourceStat.isDirectory()) {
     throw new Error("La ruta del pack debe ser carpeta o archivo .zip.");
+  }
+
+  if (sourceStat.isDirectory() && curseForgeManifestInfo(serverPath)) {
+    const converted = convertCurseForgeExport(sourcePath, config, body);
+    serverPath = converted.path;
+    name = converted.name;
+    body = {
+      ...body,
+      name: converted.name,
+      path: converted.path,
+      minRam: converted.minRam,
+      maxRam: converted.maxRam,
+      notes: [String(body?.notes || "").trim(), converted.notes].filter(Boolean).join("\n")
+    };
+    notes.push(`Convertido desde carpeta CurseForge: ${sourcePath}`);
+    notes.push(`Reporte: ${join(converted.path, "conversion-report.json")}`);
   }
 
   const detected = detectRunnableServerPack(serverPath, {
